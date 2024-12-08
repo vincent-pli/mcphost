@@ -15,7 +15,6 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/lipgloss"
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/spf13/cobra"
@@ -24,55 +23,6 @@ import (
 
 var (
 	renderer *glamour.TermRenderer
-
-	// Tokyo Night theme colors
-	tokyoPurple = lipgloss.Color("99")  // #9d7cd8
-	tokyoCyan   = lipgloss.Color("73")  // #7dcfff
-	tokyoBlue   = lipgloss.Color("111") // #7aa2f7
-	tokyoGreen  = lipgloss.Color("120") // #73daca
-	tokyoRed    = lipgloss.Color("203") // #f7768e
-	tokyoOrange = lipgloss.Color("215") // #ff9e64
-	tokyoFg     = lipgloss.Color("189") // #c0caf5
-	tokyoGray   = lipgloss.Color("237") // #3b4261
-	tokyoBg     = lipgloss.Color("234") // #1a1b26
-
-	serverCommandStyle = lipgloss.NewStyle().
-				Foreground(tokyoOrange).
-				Bold(true)
-
-	serverArgumentsStyle = lipgloss.NewStyle().
-				Foreground(tokyoFg)
-
-	serverHeaderStyle = lipgloss.NewStyle().
-				Foreground(tokyoCyan).
-				Bold(true)
-
-	promptStyle = lipgloss.NewStyle().
-			Foreground(tokyoBlue).
-			PaddingLeft(2)
-
-	responseStyle = lipgloss.NewStyle().
-			Foreground(tokyoFg).
-			PaddingLeft(2)
-
-	errorStyle = lipgloss.NewStyle().
-			Foreground(tokyoRed).
-			Bold(true)
-
-	serverBox = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(tokyoPurple).
-			Padding(1).
-			MarginBottom(1).
-			AlignHorizontal(lipgloss.Left) // Force left alignment
-
-	toolNameStyle = lipgloss.NewStyle().
-			Foreground(tokyoCyan).
-			Bold(true)
-
-	descriptionStyle = lipgloss.NewStyle().
-				Foreground(tokyoFg).
-				PaddingBottom(1)
 
 	configFile string
 )
@@ -114,196 +64,6 @@ func updateRenderer() error {
 		glamour.WithWordWrap(width),
 	)
 	return err
-}
-
-func handleHelpCommand() {
-	if err := updateRenderer(); err != nil {
-		fmt.Printf(
-			"\n%s\n",
-			errorStyle.Render(fmt.Sprintf("Error updating renderer: %v", err)),
-		)
-		return
-	}
-	var markdown strings.Builder
-
-	markdown.WriteString("# Available Commands\n\n")
-	markdown.WriteString("The following commands are available:\n\n")
-	markdown.WriteString("- **/help**: Show this help message\n")
-	markdown.WriteString("- **/tools**: List all available tools\n")
-	markdown.WriteString("- **/servers**: List configured MCP servers\n")
-	markdown.WriteString("- **/quit**: Exit the application\n")
-	markdown.WriteString("\nYou can also press Ctrl+C at any time to quit.\n")
-	markdown.WriteString("\n## Subcommands\n\n")
-	markdown.WriteString(
-		"- **ollama**: Use an Ollama model instead of Claude\n",
-	)
-	markdown.WriteString("  Example: `mcphost ollama --model mistral`\n")
-
-	rendered, err := renderer.Render(markdown.String())
-	if err != nil {
-		fmt.Printf(
-			"\n%s\n",
-			errorStyle.Render(fmt.Sprintf("Error rendering help: %v", err)),
-		)
-		return
-	}
-
-	fmt.Print(rendered)
-}
-
-func handleServersCommand(config *MCPConfig) {
-	if err := updateRenderer(); err != nil {
-		fmt.Printf(
-			"\n%s\n",
-			errorStyle.Render(fmt.Sprintf("Error updating renderer: %v", err)),
-		)
-		return
-	}
-
-	var markdown strings.Builder
-	action := func() {
-		if len(config.MCPServers) == 0 {
-			markdown.WriteString("No servers configured.\n")
-		} else {
-			for name, server := range config.MCPServers {
-				markdown.WriteString(fmt.Sprintf("# %s\n\n", name))
-				markdown.WriteString("*Command*\n")
-				markdown.WriteString(fmt.Sprintf("`%s`\n\n", server.Command))
-
-				markdown.WriteString("*Arguments*\n")
-				if len(server.Args) > 0 {
-					markdown.WriteString(fmt.Sprintf("`%s`\n", strings.Join(server.Args, " ")))
-				} else {
-					markdown.WriteString("*None*\n")
-				}
-			}
-		}
-	}
-
-	_ = spinner.New().
-		Title("Loading server configuration...").
-		Action(action).
-		Run()
-	rendered, err := renderer.Render(markdown.String())
-	if err != nil {
-		fmt.Printf(
-			"\n%s\n",
-			errorStyle.Render(fmt.Sprintf("Error rendering servers: %v", err)),
-		)
-		return
-	}
-
-	// Calculate width with proper margins
-	termWidth := getTerminalWidth()
-	contentWidth := termWidth - 20 // Reserve space for margins
-
-	// Create a box style with the calculated width
-	boxStyle := serverBox.Width(contentWidth)
-
-	// Wrap the rendered markdown in the box
-	boxedContent := boxStyle.Render(rendered)
-	fmt.Print(boxedContent)
-}
-
-func handleToolsCommand(mcpClients map[string]*mcpclient.StdioMCPClient) {
-	if err := updateRenderer(); err != nil {
-		fmt.Printf(
-			"\n%s\n",
-			errorStyle.Render(fmt.Sprintf("Error updating renderer: %v", err)),
-		)
-		return
-	}
-
-	// Calculate widths with proper margins
-	termWidth := getTerminalWidth()
-	contentWidth := termWidth - 20 // Reserve space for margins
-
-	// Update styles with calculated widths
-	serverBoxStyle := serverBox.Width(contentWidth)
-
-	type serverTools struct {
-		tools []mcp.Tool
-		err   error
-	}
-	results := make(map[string]serverTools)
-
-	action := func() {
-		for serverName, mcpClient := range mcpClients {
-			ctx, cancel := context.WithTimeout(
-				context.Background(),
-				10*time.Second,
-			)
-			defer cancel() // Move defer here to ensure it's called
-
-			toolsResult, err := mcpClient.ListTools(ctx, mcp.ListToolsRequest{})
-			if err != nil {
-				results[serverName] = serverTools{
-					tools: nil,
-					err:   err,
-				}
-				continue
-			}
-
-			// Only access Tools if toolsResult is not nil
-			var tools []mcp.Tool
-			if toolsResult != nil {
-				tools = toolsResult.Tools
-			}
-
-			results[serverName] = serverTools{
-				tools: tools,
-				err:   nil,
-			}
-		}
-	}
-	_ = spinner.New().
-		Title("Fetching tools from all servers...").
-		Action(action).
-		Run()
-
-	// Now display all results
-	for serverName, result := range results {
-		if result.err != nil {
-			errMsg := errorStyle.Render(
-				fmt.Sprintf(
-					"Error fetching tools from %s: %v",
-					serverName,
-					result.err,
-				),
-			)
-			fmt.Printf("\n%s\n", serverBox.Render(errMsg))
-			continue
-		}
-
-		serverHeader := fmt.Sprintf("# %s\n", serverName)
-		renderedHeader, err := renderer.Render(serverHeader)
-		if err != nil {
-			errMsg := errorStyle.Render(
-				fmt.Sprintf("Error rendering server header: %v", err),
-			)
-			fmt.Printf("\n%s\n", serverBox.Render(errMsg))
-			continue
-		}
-
-		var content strings.Builder
-		content.WriteString(renderedHeader)
-
-		if len(result.tools) == 0 {
-			content.WriteString("\nNo tools available.\n")
-		} else {
-			for _, tool := range result.tools {
-				toolDisplay := fmt.Sprintf("%s\n%s",
-					toolNameStyle.Render("🔧 "+tool.Name),
-					descriptionStyle.Render(tool.Description),
-				)
-				content.WriteString(toolDisplay + "\n")
-			}
-		}
-
-		boxedContent := serverBoxStyle.Render(content.String())
-		// Print directly without the centeredBox wrapper
-		fmt.Print(boxedContent)
-	}
 }
 
 func runPrompt(
@@ -536,25 +296,12 @@ func runMCPHost() error {
 		}
 
 		// Handle slash commands
-		if strings.HasPrefix(prompt, "/") {
-			switch strings.ToLower(strings.TrimSpace(prompt)) {
-			case "/tools":
-				handleToolsCommand(mcpClients)
-				continue
-			case "/help":
-				handleHelpCommand()
-				continue
-			case "/servers":
-				handleServersCommand(mcpConfig)
-				continue
-			case "/quit":
-				fmt.Println("\nGoodbye!")
-				return nil
-			default:
-				fmt.Printf("%s\nType /help to see available commands\n\n",
-					errorStyle.Render("Unknown command: "+prompt))
-				continue
-			}
+		handled, err := handleSlashCommand(prompt, mcpConfig, mcpClients)
+		if err != nil {
+			return err
+		}
+		if handled {
+			continue
 		}
 
 		err = runPrompt(client, mcpClients, allTools, prompt, &messages)

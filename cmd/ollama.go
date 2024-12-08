@@ -207,25 +207,12 @@ When you do need to use a tool, explain what you're doing first.`,
 		}
 
 		// Handle slash commands
-		if strings.HasPrefix(prompt, "/") {
-			switch strings.ToLower(strings.TrimSpace(prompt)) {
-			case "/tools":
-				handleToolsCommand(mcpClients)
-				continue
-			case "/help":
-				handleHelpCommand()
-				continue
-			case "/servers":
-				handleServersCommand(mcpConfig)
-				continue
-			case "/quit":
-				fmt.Println("\nGoodbye!")
-				return nil
-			default:
-				fmt.Printf("%s\nType /help to see available commands\n\n",
-					errorStyle.Render("Unknown command: "+prompt))
-				continue
-			}
+		handled, err := handleSlashCommand(prompt, mcpConfig, mcpClients)
+		if err != nil {
+			return err
+		}
+		if handled {
+			continue
 		}
 
 		err = runOllamaPrompt(client, mcpClients, allTools, prompt, &messages)
