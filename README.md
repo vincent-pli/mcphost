@@ -1,8 +1,8 @@
-# MCPHost
+# MCPHost 🤖
 
-A CLI host application that enables Large Language Models (LLMs) to interact with external tools through the Model Context Protocol (MCP). Currently supports both Claude 3.5 Sonnet and Ollama models.
+A CLI host application that enables Large Language Models (LLMs) to interact with external tools through the Model Context Protocol (MCP). Currently supports both Claude 3.5 Sonnet and Ollama models. 
 
-## Overview
+## Overview 🌟
 
 MCPHost acts as a host in the MCP client-server architecture, where:
 - **Hosts** (like MCPHost) are LLM applications that manage connections and interactions
@@ -10,27 +10,26 @@ MCPHost acts as a host in the MCP client-server architecture, where:
 - **Servers** provide context, tools, and capabilities to the LLMs
 
 This architecture allows language models to:
-- Access external tools and data sources
-- Maintain consistent context across interactions
-- Execute commands and retrieve information safely
+- Access external tools and data sources 🛠️
+- Maintain consistent context across interactions 🔄
+- Execute commands and retrieve information safely 🔒
 
-## Features
+## Features ✨
 
 - Interactive conversations with either Claude 3.5 Sonnet or Ollama models
 - Support for multiple concurrent MCP servers
 - Dynamic tool discovery and integration
-- Streaming responses from both Claude and Ollama
 - Tool calling capabilities for both model types
 - Configurable MCP server locations and arguments
 - Consistent command interface across model types
 
-## Installation
+## Installation 📦
 
 ```bash
 go install github.com/mark3labs/mcphost@latest
 ```
 
-## Configuration
+## Configuration ⚙️
 
 1. For Claude access, set your Anthropic API key as an environment variable:
 ```bash
@@ -70,7 +69,7 @@ Each MCP server entry requires:
   - For SQLite server: `mcp-server-sqlite` with database path
   - For filesystem server: `@modelcontextprotocol/server-filesystem` with directory path
 
-## Usage
+## Usage 🚀
 
 ### Using Claude 3.5 Sonnet
 Run the tool with default config location (`~/mcp.json`):
@@ -89,7 +88,7 @@ mcphost ollama --model mistral
 mcphost --config /path/to/config.json
 ```
 
-## Available Commands
+## Available Commands 💻
 
 While chatting, you can use these commands:
 - `/help`: Show available commands
@@ -98,18 +97,18 @@ While chatting, you can use these commands:
 - `/quit`: Exit the application
 - `Ctrl+C`: Exit at any time
 
-## Requirements
+## Requirements 📋
 
 - Go 1.18 or later
 - For Claude: An Anthropic API key
 - For Ollama: Local Ollama installation with desired models
 - One or more MCP-compatible tool servers
 
-## MCP Server Compatibility
+## MCP Server Compatibility 🔌
 
 MCPHost can work with any MCP-compliant server. For examples and reference implementations, see the [MCP Servers Repository](https://github.com/modelcontextprotocol/servers).
 
-## Contributing
+## Contributing 🤝
 
 Contributions are welcome! Feel free to:
 - Submit bug reports or feature requests through issues
@@ -119,11 +118,11 @@ Contributions are welcome! Feel free to:
 
 Please ensure your contributions follow good coding practices and include appropriate tests.
 
-## License
+## License 📄
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Acknowledgments
+## Acknowledgments 🙏
 
 - Thanks to the Anthropic team for Claude and the MCP specification
 - Thanks to the Ollama team for their local LLM runtime
