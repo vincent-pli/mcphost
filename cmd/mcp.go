@@ -55,9 +55,34 @@ func loadMCPConfig() (*MCPConfig, error) {
         if err != nil {
             return nil, fmt.Errorf("error getting home directory: %w", err)
         }
-        configPath = filepath.Join(homeDir, "mcp.json")
+        configPath = filepath.Join(homeDir, ".mcp.json")
     }
 
+    // Check if config file exists
+    if _, err := os.Stat(configPath); os.IsNotExist(err) {
+        // Create default config
+        defaultConfig := MCPConfig{
+            MCPServers: make(map[string]struct {
+                Command string   `json:"command"`
+                Args    []string `json:"args"`
+            }),
+        }
+        
+        // Create the file with default config
+        configData, err := json.MarshalIndent(defaultConfig, "", "  ")
+        if err != nil {
+            return nil, fmt.Errorf("error creating default config: %w", err)
+        }
+        
+        if err := os.WriteFile(configPath, configData, 0644); err != nil {
+            return nil, fmt.Errorf("error writing default config file: %w", err)
+        }
+        
+        log.Info("Created default config file", "path", configPath)
+        return &defaultConfig, nil
+    }
+
+    // Read existing config
     configData, err := os.ReadFile(configPath)
     if err != nil {
         return nil, fmt.Errorf("error reading config file %s: %w", configPath, err)

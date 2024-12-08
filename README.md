@@ -39,7 +39,8 @@ export ANTHROPIC_API_KEY='your-api-key'
 
 2. For Ollama access, ensure you have Ollama installed and running locally with your desired models.
 
-3. Create an MCP configuration file at `~/mcp.json` (or specify location with `--config`):
+3. MCPHost will automatically create a configuration file at `~/.mcp.json` if it doesn't exist. You can also specify a custom location using the `--config` flag:
+
 ```json
 {
   "mcpServers": {
