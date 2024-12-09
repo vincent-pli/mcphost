@@ -33,6 +33,27 @@ var (
 	}
 )
 
+func modelSupportsTools(client *api.Client, modelName string) bool {
+    resp, err := client.Show(context.Background(), &api.ShowRequest{
+        Model: modelName,
+    })
+    
+    if err != nil {
+        log.Error("Failed to get model info", "error", err)
+        return false
+    }
+
+    // Check if model details indicate function calling support
+    // This looks for function calling capability in model details
+    if resp.ModelInfo != nil {
+        if format, ok := resp.ModelInfo["format"].(string); ok {
+            return strings.Contains(strings.ToLower(format), "functions")
+        }
+    }
+
+    return false
+}
+
 func init() {
 	ollamaCmd.Flags().
 		StringVar(&modelName, "model", "", "Ollama model to use (required)")
@@ -138,30 +159,43 @@ func runOllama() error {
 	}
 
 	var allTools []api.Tool
-	for serverName, mcpClient := range mcpClients {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		toolsResult, err := mcpClient.ListTools(ctx, mcp.ListToolsRequest{})
-		cancel()
+	var activeClients map[string]*mcpclient.StdioMCPClient
 
-		if err != nil {
-			log.Error(
-				"Error fetching tools",
+	if modelSupportsTools(client, modelName) {
+		activeClients = mcpClients // Use the full set of clients
+		for serverName, mcpClient := range mcpClients {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			toolsResult, err := mcpClient.ListTools(ctx, mcp.ListToolsRequest{})
+			cancel()
+
+			if err != nil {
+				log.Error(
+					"Error fetching tools",
+					"server",
+					serverName,
+					"error",
+					err,
+				)
+				continue
+			}
+
+			serverTools := mcpToolsToOllamaTools(serverName, toolsResult.Tools)
+			allTools = append(allTools, serverTools...)
+			log.Info(
+				"Tools loaded",
 				"server",
 				serverName,
-				"error",
-				err,
+				"count",
+				len(toolsResult.Tools),
 			)
-			continue
 		}
-
-		serverTools := mcpToolsToOllamaTools(serverName, toolsResult.Tools)
-		allTools = append(allTools, serverTools...)
-		log.Info(
-			"Tools loaded",
-			"server",
-			serverName,
-			"count",
-			len(toolsResult.Tools),
+	} else {
+		activeClients = nil // No active clients when tools are disabled
+		fmt.Printf("\n%s\n\n",
+			errorStyle.Render(fmt.Sprintf(
+				"Warning: Model %s does not support function calling. Tools will be disabled.",
+				modelName,
+			)),
 		)
 	}
 
@@ -207,7 +241,7 @@ When you do need to use a tool, explain what you're doing first.`,
 		}
 
 		// Handle slash commands
-		handled, err := handleSlashCommand(prompt, mcpConfig, mcpClients)
+		handled, err := handleSlashCommand(prompt, mcpConfig, activeClients)
 		if err != nil {
 			return err
 		}

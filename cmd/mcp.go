@@ -336,6 +336,18 @@ func handleToolsCommand(mcpClients map[string]*mcpclient.StdioMCPClient) {
 		return
 	}
 
+	// If tools are disabled (empty client map), show a message
+	if len(mcpClients) == 0 {
+		termWidth := getTerminalWidth()
+		contentWidth := termWidth - 20
+		serverBoxStyle := serverBox.Width(contentWidth)
+		
+		message := "Tools are currently disabled for this model."
+		boxedContent := serverBoxStyle.Render(message)
+		fmt.Print(boxedContent)
+		return
+	}
+
 	// Calculate widths with proper margins
 	termWidth := getTerminalWidth()
 	contentWidth := termWidth - 20 // Reserve space for margins
