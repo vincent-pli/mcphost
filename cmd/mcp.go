@@ -10,6 +10,7 @@ import (
 
 	"github.com/charmbracelet/huh/spinner"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/list"
 	"github.com/charmbracelet/log"
 
 	"strings"
@@ -31,17 +32,6 @@ var (
 	tokyoGray   = lipgloss.Color("237") // #3b4261
 	tokyoBg     = lipgloss.Color("234") // #1a1b26
 
-	serverCommandStyle = lipgloss.NewStyle().
-				Foreground(tokyoOrange).
-				Bold(true)
-
-	serverArgumentsStyle = lipgloss.NewStyle().
-				Foreground(tokyoFg)
-
-	serverHeaderStyle = lipgloss.NewStyle().
-				Foreground(tokyoCyan).
-				Bold(true)
-
 	promptStyle = lipgloss.NewStyle().
 			Foreground(tokyoBlue).
 			PaddingLeft(2)
@@ -54,13 +44,6 @@ var (
 			Foreground(tokyoRed).
 			Bold(true)
 
-	serverBox = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(tokyoPurple).
-			Padding(1).
-			MarginBottom(1).
-			AlignHorizontal(lipgloss.Left)
-
 	toolNameStyle = lipgloss.NewStyle().
 			Foreground(tokyoCyan).
 			Bold(true)
@@ -70,6 +53,7 @@ var (
 				PaddingBottom(1)
 
 	contentStyle = lipgloss.NewStyle().
+			Background(tokyoBg).
 			PaddingLeft(4).
 			PaddingRight(4)
 )
@@ -279,161 +263,169 @@ func handleHelpCommand() {
 }
 
 func handleServersCommand(config *MCPConfig) {
-    if err := updateRenderer(); err != nil {
-        fmt.Printf(
-            "\n%s\n",
-            errorStyle.Render(fmt.Sprintf("Error updating renderer: %v", err)),
-        )
-        return
-    }
+	if err := updateRenderer(); err != nil {
+		fmt.Printf(
+			"\n%s\n",
+			errorStyle.Render(fmt.Sprintf("Error updating renderer: %v", err)),
+		)
+		return
+	}
 
-    var markdown strings.Builder
-    action := func() {
-        if len(config.MCPServers) == 0 {
-            markdown.WriteString("No servers configured.\n")
-        } else {
-            for name, server := range config.MCPServers {
-                markdown.WriteString(fmt.Sprintf("# %s\n\n", name))
-                markdown.WriteString("*Command*\n")
-                markdown.WriteString(fmt.Sprintf("`%s`\n\n", server.Command))
+	var markdown strings.Builder
+	action := func() {
+		if len(config.MCPServers) == 0 {
+			markdown.WriteString("No servers configured.\n")
+		} else {
+			for name, server := range config.MCPServers {
+				markdown.WriteString(fmt.Sprintf("# %s\n\n", name))
+				markdown.WriteString("*Command*\n")
+				markdown.WriteString(fmt.Sprintf("`%s`\n\n", server.Command))
 
-                markdown.WriteString("*Arguments*\n")
-                if len(server.Args) > 0 {
-                    markdown.WriteString(fmt.Sprintf("`%s`\n", strings.Join(server.Args, " ")))
-                } else {
-                    markdown.WriteString("*None*\n")
-                }
-                markdown.WriteString("\n") // Add spacing between servers
-            }
-        }
-    }
+				markdown.WriteString("*Arguments*\n")
+				if len(server.Args) > 0 {
+					markdown.WriteString(fmt.Sprintf("`%s`\n", strings.Join(server.Args, " ")))
+				} else {
+					markdown.WriteString("*None*\n")
+				}
+				markdown.WriteString("\n") // Add spacing between servers
+			}
+		}
+	}
 
-    _ = spinner.New().
-        Title("Loading server configuration...").
-        Action(action).
-        Run()
+	_ = spinner.New().
+		Title("Loading server configuration...").
+		Action(action).
+		Run()
 
-    rendered, err := renderer.Render(markdown.String())
-    if err != nil {
-        fmt.Printf(
-            "\n%s\n",
-            errorStyle.Render(fmt.Sprintf("Error rendering servers: %v", err)),
-        )
-        return
-    }
+	rendered, err := renderer.Render(markdown.String())
+	if err != nil {
+		fmt.Printf(
+			"\n%s\n",
+			errorStyle.Render(fmt.Sprintf("Error rendering servers: %v", err)),
+		)
+		return
+	}
 
-    // Create a container style with margins
-    containerStyle := lipgloss.NewStyle().
-        MarginLeft(4).
-        MarginRight(4)
+	// Create a container style with margins
+	containerStyle := lipgloss.NewStyle().
+		MarginLeft(4).
+		MarginRight(4)
 
-    // Wrap the rendered content in the container
-    fmt.Print("\n" + containerStyle.Render(rendered) + "\n")
+	// Wrap the rendered content in the container
+	fmt.Print("\n" + containerStyle.Render(rendered) + "\n")
 }
 
 func handleToolsCommand(mcpClients map[string]*mcpclient.StdioMCPClient) {
-    if err := updateRenderer(); err != nil {
-        fmt.Printf(
-            "\n%s\n",
-            errorStyle.Render(fmt.Sprintf("Error updating renderer: %v", err)),
-        )
-        return
-    }
+	// Get terminal width for proper wrapping
+	width := getTerminalWidth()
 
-    var mainContent strings.Builder
+	// Adjust width to account for margins and list indentation
+	contentWidth := width - 12 // Account for margins and list markers
 
-    // If tools are disabled (empty client map), show a message
-    if len(mcpClients) == 0 {
-        mainContent.WriteString("Tools are currently disabled for this model.\n")
-        fmt.Print("\n" + contentStyle.Render(mainContent.String()) + "\n\n")
-        return
-    }
+	// If tools are disabled (empty client map), show a message
+	if len(mcpClients) == 0 {
+		fmt.Print(
+			"\n" + contentStyle.Render(
+				"Tools are currently disabled for this model.\n",
+			) + "\n\n",
+		)
+		return
+	}
 
-    type serverTools struct {
-        tools []mcp.Tool
-        err   error
-    }
-    results := make(map[string]serverTools)
+	type serverTools struct {
+		tools []mcp.Tool
+		err   error
+	}
+	results := make(map[string]serverTools)
 
-    action := func() {
-        for serverName, mcpClient := range mcpClients {
-            ctx, cancel := context.WithTimeout(
-                context.Background(),
-                10*time.Second,
-            )
-            defer cancel()
+	action := func() {
+		for serverName, mcpClient := range mcpClients {
+			ctx, cancel := context.WithTimeout(
+				context.Background(),
+				10*time.Second,
+			)
+			defer cancel()
 
-            toolsResult, err := mcpClient.ListTools(ctx, mcp.ListToolsRequest{})
-            if err != nil {
-                results[serverName] = serverTools{
-                    tools: nil,
-                    err:   err,
-                }
-                continue
-            }
+			toolsResult, err := mcpClient.ListTools(ctx, mcp.ListToolsRequest{})
+			if err != nil {
+				results[serverName] = serverTools{
+					tools: nil,
+					err:   err,
+				}
+				continue
+			}
 
-            var tools []mcp.Tool
-            if toolsResult != nil {
-                tools = toolsResult.Tools
-            }
+			var tools []mcp.Tool
+			if toolsResult != nil {
+				tools = toolsResult.Tools
+			}
 
-            results[serverName] = serverTools{
-                tools: tools,
-                err:   nil,
-            }
-        }
-    }
-    _ = spinner.New().
-        Title("Fetching tools from all servers...").
-        Action(action).
-        Run()
+			results[serverName] = serverTools{
+				tools: tools,
+				err:   nil,
+			}
+		}
+	}
+	_ = spinner.New().
+		Title("Fetching tools from all servers...").
+		Action(action).
+		Run()
 
-    for serverName, result := range results {
-        if result.err != nil {
-            errMsg := errorStyle.Render(
-                fmt.Sprintf(
-                    "Error fetching tools from %s: %v",
-                    serverName,
-                    result.err,
-                ),
-            )
-            mainContent.WriteString(errMsg + "\n")
-            continue
-        }
+	// Create a list for all servers
+	l := list.New().
+		EnumeratorStyle(lipgloss.NewStyle().Foreground(tokyoPurple).MarginRight(1))
 
-        serverHeader := fmt.Sprintf("# %s\n", serverName)
-        renderedHeader, err := renderer.Render(serverHeader)
-        if err != nil {
-            errMsg := errorStyle.Render(
-                fmt.Sprintf("Error rendering server header: %v", err),
-            )
-            mainContent.WriteString(errMsg + "\n")
-            continue
-        }
+	for serverName, result := range results {
+		if result.err != nil {
+			fmt.Printf(
+				"\n%s\n",
+				errorStyle.Render(
+					fmt.Sprintf(
+						"Error fetching tools from %s: %v",
+						serverName,
+						result.err,
+					),
+				),
+			)
+			continue
+		}
 
-        mainContent.WriteString(renderedHeader)
+		// Create a sublist for each server's tools
+		serverList := list.New().
+			EnumeratorStyle(lipgloss.NewStyle().Foreground(tokyoCyan).MarginRight(1))
 
-        if len(result.tools) == 0 {
-            mainContent.WriteString("No tools available.\n")
-        } else {
-            for _, tool := range result.tools {
-                toolDisplay := fmt.Sprintf("%s\n%s",
-                    toolNameStyle.Render("🔧 "+tool.Name),
-                    descriptionStyle.Render(tool.Description),
-                )
-                mainContent.WriteString(toolDisplay + "\n")
-            }
-        }
-        mainContent.WriteString("\n") // Add spacing between servers
-    }
+		if len(result.tools) == 0 {
+			serverList.Item("No tools available")
+		} else {
+			for _, tool := range result.tools {
+				// Create a description style with word wrap
+				descStyle := lipgloss.NewStyle().
+					Foreground(tokyoFg).
+					Width(contentWidth).
+					Align(lipgloss.Left)
 
-    // Create a container style with margins
-    containerStyle := lipgloss.NewStyle().
-        MarginLeft(4).
-        MarginRight(4)
+				// Create a description sublist for each tool
+				toolDesc := list.New().
+					EnumeratorStyle(lipgloss.NewStyle().Foreground(tokyoGreen).MarginRight(1)).
+					Item(descStyle.Render(tool.Description))
 
-    // Wrap the entire content in the container
-    fmt.Print("\n" + containerStyle.Render(mainContent.String()) + "\n")
+				// Add the tool with its description as a nested list
+				serverList.Item(toolNameStyle.Render(tool.Name)).
+					Item(toolDesc)
+			}
+		}
+
+		// Add the server and its tools to the main list
+		l.Item(serverName).Item(serverList)
+	}
+
+	// Create a container style with margins
+	containerStyle := lipgloss.NewStyle().
+		Margin(2).
+		Width(width)
+
+	// Wrap the entire content in the container
+	fmt.Print("\n" + containerStyle.Render(l.String()) + "\n")
 }
 func displayMessageHistory(messages interface{}) {
 	if err := updateRenderer(); err != nil {

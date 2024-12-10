@@ -8,9 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/log"
 	"github.com/charmbracelet/huh/spinner"
+	"github.com/charmbracelet/log"
 
 	"github.com/charmbracelet/glamour"
 	mcpclient "github.com/mark3labs/mcp-go/client"
@@ -28,7 +29,7 @@ var (
 const (
 	initialBackoff = 1 * time.Second
 	maxBackoff     = 30 * time.Second
-	maxRetries     = 5  // Will reach close to max backoff
+	maxRetries     = 5 // Will reach close to max backoff
 )
 
 var rootCmd = &cobra.Command{
@@ -61,14 +62,14 @@ func getTerminalWidth() int {
 }
 
 func handleHistoryCommand(messages interface{}) {
-    displayMessageHistory(messages)
+	displayMessageHistory(messages)
 }
 
 func updateRenderer() error {
 	width := getTerminalWidth()
 	var err error
 	renderer, err = glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		glamour.WithStandardStyle(styles.TokyoNightStyle),
 		glamour.WithWordWrap(width),
 	)
 	return err
@@ -119,13 +120,15 @@ func runPrompt(
 			// Check if it's an overloaded error
 			if strings.Contains(err.Error(), "overloaded_error") {
 				if retries >= maxRetries {
-					return fmt.Errorf("claude is currently overloaded. please wait a few minutes and try again")
+					return fmt.Errorf(
+						"claude is currently overloaded. please wait a few minutes and try again",
+					)
 				}
-				
-				log.Warn("Claude is overloaded, backing off...", 
+
+				log.Warn("Claude is overloaded, backing off...",
 					"attempt", retries+1,
 					"backoff", backoff.String())
-				
+
 				time.Sleep(backoff)
 				backoff *= 2
 				if backoff > maxBackoff {
@@ -141,7 +144,9 @@ func runPrompt(
 		break
 	}
 
-	fmt.Print(responseStyle.Render("\nClaude: "))
+	if str, err := renderer.Render("\nClaude: "); err == nil {
+		fmt.Print(str)
+	}
 
 	toolResults := []ContentBlock{}
 
@@ -261,10 +266,10 @@ func runPrompt(
 		return runPrompt(client, mcpClients, tools, "", messages)
 	}
 
-	log.Info("Usage statistics", 
+	log.Info("Usage statistics",
 		"input_tokens", message.Usage.InputTokens,
 		"output_tokens", message.Usage.OutputTokens,
-		"total_tokens", message.Usage.InputTokens + message.Usage.OutputTokens)
+		"total_tokens", message.Usage.InputTokens+message.Usage.OutputTokens)
 
 	fmt.Println() // Add spacing
 	return nil
@@ -366,7 +371,12 @@ func runMCPHost() error {
 		}
 
 		// Handle slash commands
-		handled, err := handleSlashCommand(prompt, mcpConfig, mcpClients, messages)
+		handled, err := handleSlashCommand(
+			prompt,
+			mcpConfig,
+			mcpClients,
+			messages,
+		)
 		if err != nil {
 			return err
 		}
