@@ -60,6 +60,10 @@ func getTerminalWidth() int {
 	return width - 20
 }
 
+func handleHistoryCommand(messages interface{}) {
+    displayMessageHistory(messages)
+}
+
 func updateRenderer() error {
 	width := getTerminalWidth()
 	var err error
@@ -362,7 +366,7 @@ func runMCPHost() error {
 		}
 
 		// Handle slash commands
-		handled, err := handleSlashCommand(prompt, mcpConfig, mcpClients)
+		handled, err := handleSlashCommand(prompt, mcpConfig, mcpClients, messages)
 		if err != nil {
 			return err
 		}

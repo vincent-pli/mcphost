@@ -244,7 +244,7 @@ When you do need to use a tool, explain what you're doing first.`,
 		}
 
 		// Handle slash commands
-		handled, err := handleSlashCommand(prompt, mcpConfig, activeClients)
+		handled, err := handleSlashCommand(prompt, mcpConfig, activeClients, messages)
 		if err != nil {
 			return err
 		}

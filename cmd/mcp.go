@@ -16,6 +16,7 @@ import (
 
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
+	api "github.com/ollama/ollama/api"
 )
 
 var (
@@ -67,6 +68,10 @@ var (
 	descriptionStyle = lipgloss.NewStyle().
 				Foreground(tokyoFg).
 				PaddingBottom(1)
+
+	contentStyle = lipgloss.NewStyle().
+			PaddingLeft(4).
+			PaddingRight(4)
 )
 
 type MCPConfig struct {
@@ -207,6 +212,7 @@ func handleSlashCommand(
 	prompt string,
 	mcpConfig *MCPConfig,
 	mcpClients map[string]*mcpclient.StdioMCPClient,
+	messages interface{},
 ) (bool, error) {
 	if !strings.HasPrefix(prompt, "/") {
 		return false, nil
@@ -218,6 +224,9 @@ func handleSlashCommand(
 		return true, nil
 	case "/help":
 		handleHelpCommand()
+		return true, nil
+	case "/history":
+		handleHistoryCommand(messages)
 		return true, nil
 	case "/servers":
 		handleServersCommand(mcpConfig)
@@ -248,6 +257,7 @@ func handleHelpCommand() {
 	markdown.WriteString("- **/help**: Show this help message\n")
 	markdown.WriteString("- **/tools**: List all available tools\n")
 	markdown.WriteString("- **/servers**: List configured MCP servers\n")
+	markdown.WriteString("- **/history**: Display conversation history\n")
 	markdown.WriteString("- **/quit**: Exit the application\n")
 	markdown.WriteString("\nYou can also press Ctrl+C at any time to quit.\n")
 	markdown.WriteString("\n## Subcommands\n\n")
@@ -269,6 +279,163 @@ func handleHelpCommand() {
 }
 
 func handleServersCommand(config *MCPConfig) {
+    if err := updateRenderer(); err != nil {
+        fmt.Printf(
+            "\n%s\n",
+            errorStyle.Render(fmt.Sprintf("Error updating renderer: %v", err)),
+        )
+        return
+    }
+
+    var markdown strings.Builder
+    action := func() {
+        if len(config.MCPServers) == 0 {
+            markdown.WriteString("No servers configured.\n")
+        } else {
+            for name, server := range config.MCPServers {
+                markdown.WriteString(fmt.Sprintf("# %s\n\n", name))
+                markdown.WriteString("*Command*\n")
+                markdown.WriteString(fmt.Sprintf("`%s`\n\n", server.Command))
+
+                markdown.WriteString("*Arguments*\n")
+                if len(server.Args) > 0 {
+                    markdown.WriteString(fmt.Sprintf("`%s`\n", strings.Join(server.Args, " ")))
+                } else {
+                    markdown.WriteString("*None*\n")
+                }
+                markdown.WriteString("\n") // Add spacing between servers
+            }
+        }
+    }
+
+    _ = spinner.New().
+        Title("Loading server configuration...").
+        Action(action).
+        Run()
+
+    rendered, err := renderer.Render(markdown.String())
+    if err != nil {
+        fmt.Printf(
+            "\n%s\n",
+            errorStyle.Render(fmt.Sprintf("Error rendering servers: %v", err)),
+        )
+        return
+    }
+
+    // Create a container style with margins
+    containerStyle := lipgloss.NewStyle().
+        MarginLeft(4).
+        MarginRight(4)
+
+    // Wrap the rendered content in the container
+    fmt.Print("\n" + containerStyle.Render(rendered) + "\n")
+}
+
+func handleToolsCommand(mcpClients map[string]*mcpclient.StdioMCPClient) {
+    if err := updateRenderer(); err != nil {
+        fmt.Printf(
+            "\n%s\n",
+            errorStyle.Render(fmt.Sprintf("Error updating renderer: %v", err)),
+        )
+        return
+    }
+
+    var mainContent strings.Builder
+
+    // If tools are disabled (empty client map), show a message
+    if len(mcpClients) == 0 {
+        mainContent.WriteString("Tools are currently disabled for this model.\n")
+        fmt.Print("\n" + contentStyle.Render(mainContent.String()) + "\n\n")
+        return
+    }
+
+    type serverTools struct {
+        tools []mcp.Tool
+        err   error
+    }
+    results := make(map[string]serverTools)
+
+    action := func() {
+        for serverName, mcpClient := range mcpClients {
+            ctx, cancel := context.WithTimeout(
+                context.Background(),
+                10*time.Second,
+            )
+            defer cancel()
+
+            toolsResult, err := mcpClient.ListTools(ctx, mcp.ListToolsRequest{})
+            if err != nil {
+                results[serverName] = serverTools{
+                    tools: nil,
+                    err:   err,
+                }
+                continue
+            }
+
+            var tools []mcp.Tool
+            if toolsResult != nil {
+                tools = toolsResult.Tools
+            }
+
+            results[serverName] = serverTools{
+                tools: tools,
+                err:   nil,
+            }
+        }
+    }
+    _ = spinner.New().
+        Title("Fetching tools from all servers...").
+        Action(action).
+        Run()
+
+    for serverName, result := range results {
+        if result.err != nil {
+            errMsg := errorStyle.Render(
+                fmt.Sprintf(
+                    "Error fetching tools from %s: %v",
+                    serverName,
+                    result.err,
+                ),
+            )
+            mainContent.WriteString(errMsg + "\n")
+            continue
+        }
+
+        serverHeader := fmt.Sprintf("# %s\n", serverName)
+        renderedHeader, err := renderer.Render(serverHeader)
+        if err != nil {
+            errMsg := errorStyle.Render(
+                fmt.Sprintf("Error rendering server header: %v", err),
+            )
+            mainContent.WriteString(errMsg + "\n")
+            continue
+        }
+
+        mainContent.WriteString(renderedHeader)
+
+        if len(result.tools) == 0 {
+            mainContent.WriteString("No tools available.\n")
+        } else {
+            for _, tool := range result.tools {
+                toolDisplay := fmt.Sprintf("%s\n%s",
+                    toolNameStyle.Render("🔧 "+tool.Name),
+                    descriptionStyle.Render(tool.Description),
+                )
+                mainContent.WriteString(toolDisplay + "\n")
+            }
+        }
+        mainContent.WriteString("\n") // Add spacing between servers
+    }
+
+    // Create a container style with margins
+    containerStyle := lipgloss.NewStyle().
+        MarginLeft(4).
+        MarginRight(4)
+
+    // Wrap the entire content in the container
+    fmt.Print("\n" + containerStyle.Render(mainContent.String()) + "\n")
+}
+func displayMessageHistory(messages interface{}) {
 	if err := updateRenderer(); err != nil {
 		fmt.Printf(
 			"\n%s\n",
@@ -278,156 +445,111 @@ func handleServersCommand(config *MCPConfig) {
 	}
 
 	var markdown strings.Builder
-	action := func() {
-		if len(config.MCPServers) == 0 {
-			markdown.WriteString("No servers configured.\n")
-		} else {
-			for name, server := range config.MCPServers {
-				markdown.WriteString(fmt.Sprintf("# %s\n\n", name))
-				markdown.WriteString("*Command*\n")
-				markdown.WriteString(fmt.Sprintf("`%s`\n\n", server.Command))
+	markdown.WriteString("# Conversation History\n\n")
 
-				markdown.WriteString("*Arguments*\n")
-				if len(server.Args) > 0 {
-					markdown.WriteString(fmt.Sprintf("`%s`\n", strings.Join(server.Args, " ")))
-				} else {
-					markdown.WriteString("*None*\n")
+	switch msgs := messages.(type) {
+	case []MessageParam: // Anthropic messages
+		for _, msg := range msgs {
+			roleTitle := "## User"
+			if msg.Role == "assistant" {
+				roleTitle = "## Assistant"
+			}
+			markdown.WriteString(roleTitle + "\n\n")
+
+			for _, block := range msg.Content {
+				switch block.Type {
+				case "text":
+					markdown.WriteString("### Text\n")
+					markdown.WriteString(block.Text + "\n\n")
+
+				case "tool_use":
+					markdown.WriteString("### Tool Use\n")
+					markdown.WriteString(fmt.Sprintf("**Tool:** %s\n\n", block.Name))
+					if block.Input != nil {
+						prettyInput, err := json.MarshalIndent(block.Input, "", "  ")
+						if err != nil {
+							markdown.WriteString(fmt.Sprintf("Error formatting input: %v\n\n", err))
+						} else {
+							markdown.WriteString("**Input:**\n```json\n")
+							markdown.WriteString(string(prettyInput))
+							markdown.WriteString("\n```\n\n")
+						}
+					}
+
+				case "tool_result":
+					markdown.WriteString("### Tool Result\n")
+					markdown.WriteString(fmt.Sprintf("**Tool ID:** %s\n\n", block.ToolUseID))
+					switch v := block.Content.(type) {
+					case string:
+						markdown.WriteString("```\n")
+						markdown.WriteString(v)
+						markdown.WriteString("\n```\n\n")
+					case []ContentBlock:
+						for _, contentBlock := range v {
+							if contentBlock.Type == "text" {
+								markdown.WriteString("```\n")
+								markdown.WriteString(contentBlock.Text)
+								markdown.WriteString("\n```\n\n")
+							}
+						}
+					}
 				}
 			}
+			markdown.WriteString("---\n\n")
+		}
+
+	case []api.Message: // Ollama messages
+		for _, msg := range msgs {
+			roleTitle := "## User"
+			if msg.Role == "assistant" {
+				roleTitle = "## Assistant"
+			} else if msg.Role == "system" {
+				roleTitle = "## System"
+			}
+			markdown.WriteString(roleTitle + "\n\n")
+
+			// Handle content
+			markdown.WriteString("### Content\n")
+			markdown.WriteString(msg.Content + "\n\n")
+
+			// Handle tool calls if present
+			if len(msg.ToolCalls) > 0 {
+				for _, toolCall := range msg.ToolCalls {
+					markdown.WriteString("### Tool Call\n")
+					markdown.WriteString(fmt.Sprintf("**Tool:** %s\n\n", toolCall.Function.Name))
+
+					prettyArgs, err := json.MarshalIndent(toolCall.Function.Arguments, "", "  ")
+					if err != nil {
+						markdown.WriteString(fmt.Sprintf("Error formatting arguments: %v\n\n", err))
+					} else {
+						markdown.WriteString("**Arguments:**\n```json\n")
+						markdown.WriteString(string(prettyArgs))
+						markdown.WriteString("\n```\n\n")
+					}
+				}
+			}
+
+			// If there's a tool result, display it
+			if msg.Content != "" && len(msg.ToolCalls) > 0 {
+				markdown.WriteString("### Result\n")
+				markdown.WriteString("```\n")
+				markdown.WriteString(msg.Content)
+				markdown.WriteString("\n```\n\n")
+			}
+			markdown.WriteString("---\n\n")
 		}
 	}
 
-	_ = spinner.New().
-		Title("Loading server configuration...").
-		Action(action).
-		Run()
+	// Render the markdown
 	rendered, err := renderer.Render(markdown.String())
 	if err != nil {
 		fmt.Printf(
 			"\n%s\n",
-			errorStyle.Render(fmt.Sprintf("Error rendering servers: %v", err)),
+			errorStyle.Render(fmt.Sprintf("Error rendering history: %v", err)),
 		)
 		return
 	}
 
-	// Calculate width with proper margins
-	termWidth := getTerminalWidth()
-	contentWidth := termWidth - 20 // Reserve space for margins
-
-	// Create a box style with the calculated width
-	boxStyle := serverBox.Width(contentWidth)
-
-	// Wrap the rendered markdown in the box
-	boxedContent := boxStyle.Render(rendered)
-	fmt.Print(boxedContent)
-}
-
-func handleToolsCommand(mcpClients map[string]*mcpclient.StdioMCPClient) {
-	if err := updateRenderer(); err != nil {
-		fmt.Printf(
-			"\n%s\n",
-			errorStyle.Render(fmt.Sprintf("Error updating renderer: %v", err)),
-		)
-		return
-	}
-
-	// If tools are disabled (empty client map), show a message
-	if len(mcpClients) == 0 {
-		termWidth := getTerminalWidth()
-		contentWidth := termWidth - 20
-		serverBoxStyle := serverBox.Width(contentWidth)
-
-		message := "Tools are currently disabled for this model."
-		boxedContent := serverBoxStyle.Render(message)
-		fmt.Print(boxedContent)
-		return
-	}
-
-	// Calculate widths with proper margins
-	termWidth := getTerminalWidth()
-	contentWidth := termWidth - 20 // Reserve space for margins
-
-	// Update styles with calculated widths
-	serverBoxStyle := serverBox.Width(contentWidth)
-
-	type serverTools struct {
-		tools []mcp.Tool
-		err   error
-	}
-	results := make(map[string]serverTools)
-
-	action := func() {
-		for serverName, mcpClient := range mcpClients {
-			ctx, cancel := context.WithTimeout(
-				context.Background(),
-				10*time.Second,
-			)
-			defer cancel()
-
-			toolsResult, err := mcpClient.ListTools(ctx, mcp.ListToolsRequest{})
-			if err != nil {
-				results[serverName] = serverTools{
-					tools: nil,
-					err:   err,
-				}
-				continue
-			}
-
-			var tools []mcp.Tool
-			if toolsResult != nil {
-				tools = toolsResult.Tools
-			}
-
-			results[serverName] = serverTools{
-				tools: tools,
-				err:   nil,
-			}
-		}
-	}
-	_ = spinner.New().
-		Title("Fetching tools from all servers...").
-		Action(action).
-		Run()
-
-	for serverName, result := range results {
-		if result.err != nil {
-			errMsg := errorStyle.Render(
-				fmt.Sprintf(
-					"Error fetching tools from %s: %v",
-					serverName,
-					result.err,
-				),
-			)
-			fmt.Printf("\n%s\n", serverBox.Render(errMsg))
-			continue
-		}
-
-		serverHeader := fmt.Sprintf("# %s\n", serverName)
-		renderedHeader, err := renderer.Render(serverHeader)
-		if err != nil {
-			errMsg := errorStyle.Render(
-				fmt.Sprintf("Error rendering server header: %v", err),
-			)
-			fmt.Printf("\n%s\n", serverBox.Render(errMsg))
-			continue
-		}
-
-		var content strings.Builder
-		content.WriteString(renderedHeader)
-
-		if len(result.tools) == 0 {
-			content.WriteString("\nNo tools available.\n")
-		} else {
-			for _, tool := range result.tools {
-				toolDisplay := fmt.Sprintf("%s\n%s",
-					toolNameStyle.Render("🔧 "+tool.Name),
-					descriptionStyle.Render(tool.Description),
-				)
-				content.WriteString(toolDisplay + "\n")
-			}
-		}
-
-		boxedContent := serverBoxStyle.Render(content.String())
-		fmt.Print(boxedContent)
-	}
+	// Print directly without box
+	fmt.Print("\n" + rendered + "\n")
 }
