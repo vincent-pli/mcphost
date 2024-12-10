@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/huh/spinner"
 	"github.com/charmbracelet/log"
+	"github.com/charmbracelet/huh/spinner"
 
 	"github.com/charmbracelet/glamour"
 	mcpclient "github.com/mark3labs/mcp-go/client"
@@ -23,6 +23,12 @@ var (
 	renderer *glamour.TermRenderer
 
 	configFile string
+)
+
+const (
+	initialBackoff = 1 * time.Second
+	maxBackoff     = 30 * time.Second
+	maxRetries     = 5  // Will reach close to max backoff
 )
 
 var rootCmd = &cobra.Command{
@@ -88,21 +94,47 @@ func runPrompt(
 
 	var message *Message
 	var err error
-	action := func() {
-		message, err = client.CreateMessage(
-			context.Background(),
-			CreateMessageRequest{
-				Model:     "claude-3-5-sonnet-20240620",
-				MaxTokens: 4096,
-				Messages:  *messages,
-				Tools:     tools,
-			},
-		)
-	}
-	_ = spinner.New().Title("Thinking...").Action(action).Run()
+	backoff := initialBackoff
+	retries := 0
 
-	if err != nil {
-		return err
+	for {
+		action := func() {
+			message, err = client.CreateMessage(
+				context.Background(),
+				CreateMessageRequest{
+					Model:     "claude-3-5-sonnet-20240620",
+					MaxTokens: 4096,
+					Messages:  *messages,
+					Tools:     tools,
+				},
+			)
+		}
+		_ = spinner.New().Title("Thinking...").Action(action).Run()
+
+		if err != nil {
+			// Check if it's an overloaded error
+			if strings.Contains(err.Error(), "overloaded_error") {
+				if retries >= maxRetries {
+					return fmt.Errorf("claude is currently overloaded. please wait a few minutes and try again")
+				}
+				
+				log.Warn("Claude is overloaded, backing off...", 
+					"attempt", retries+1,
+					"backoff", backoff.String())
+				
+				time.Sleep(backoff)
+				backoff *= 2
+				if backoff > maxBackoff {
+					backoff = maxBackoff
+				}
+				retries++
+				continue
+			}
+			// If it's not an overloaded error, return the error immediately
+			return err
+		}
+		// If we got here, the request succeeded
+		break
 	}
 
 	fmt.Print(responseStyle.Render("\nClaude: "))
@@ -224,6 +256,11 @@ func runPrompt(
 		// Make another call to get Claude's response to the tool results
 		return runPrompt(client, mcpClients, tools, "", messages)
 	}
+
+	log.Info("Usage statistics", 
+		"input_tokens", message.Usage.InputTokens,
+		"output_tokens", message.Usage.OutputTokens,
+		"total_tokens", message.Usage.InputTokens + message.Usage.OutputTokens)
 
 	fmt.Println() // Add spacing
 	return nil

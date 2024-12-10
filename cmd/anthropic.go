@@ -103,6 +103,12 @@ func (c *AnthropicClient) CreateMessage(ctx context.Context, req CreateMessageRe
         if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
             return nil, fmt.Errorf("error response with status %d", resp.StatusCode)
         }
+
+        // Special handling for overloaded error
+        if errResp.Error.Type == "overloaded_error" {
+            return nil, fmt.Errorf("overloaded_error: %s", errResp.Error.Message)
+        }
+
         return nil, fmt.Errorf("%s: %s", errResp.Error.Type, errResp.Error.Message)
     }
 
