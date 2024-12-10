@@ -22,6 +22,7 @@ This architecture allows language models to:
 - Tool calling capabilities for both model types
 - Configurable MCP server locations and arguments
 - Consistent command interface across model types
+- Configurable message history window for context management
 
 ## Installation 📦
 
@@ -88,14 +89,26 @@ mcphost ollama --model mistral
 mcphost --config /path/to/config.json
 ```
 
+### Setting Message Window Size
+Control how many previous messages are kept in context:
+```bash
+mcphost --message-window 15
+```
+The default window size is 10 messages.
+
 ## Available Commands 💻
 
 While chatting, you can use these commands:
 - `/help`: Show available commands
 - `/tools`: List all available tools
 - `/servers`: List configured MCP servers
+- `/history`: Display conversation history
 - `/quit`: Exit the application
 - `Ctrl+C`: Exit at any time
+
+### Global Flags
+- `--config`: Specify custom config file location
+- `--message-window`: Set number of messages to keep in context (default: 10)
 
 ## Requirements 📋
 

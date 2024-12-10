@@ -252,6 +252,9 @@ When you do need to use a tool, explain what you're doing first.`,
 			continue
 		}
 
+		if len(messages) > 0 {
+			messages = pruneMessages(messages)
+		}
 		err = runOllamaPrompt(client, mcpClients, allTools, prompt, &messages)
 		if err != nil {
 			return err
