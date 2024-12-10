@@ -12,8 +12,6 @@ import (
 	"github.com/charmbracelet/huh/spinner"
 	"github.com/charmbracelet/log"
 
-	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/charmbracelet/glamour"
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -67,33 +65,37 @@ func updateRenderer() error {
 }
 
 func runPrompt(
-	client *anthropic.Client,
+	client *AnthropicClient,
 	mcpClients map[string]*mcpclient.StdioMCPClient,
-	tools []anthropic.ToolParam,
+	tools []Tool,
 	prompt string,
-	messages *[]anthropic.MessageParam,
+	messages *[]MessageParam,
 ) error {
 	// Display the user's prompt if it's not empty (i.e., not a tool response)
 	if prompt != "" {
 		fmt.Printf("\n%s\n", promptStyle.Render("You: "+prompt))
 		*messages = append(
 			*messages,
-			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
+			MessageParam{
+				Role: "user",
+				Content: []ContentBlock{{
+					Type: "text",
+					Text: prompt,
+				}},
+			},
 		)
 	}
 
-	var messagePtr *anthropic.Message
+	var message *Message
 	var err error
 	action := func() {
-		messagePtr, err = client.Messages.New(
+		message, err = client.CreateMessage(
 			context.Background(),
-			anthropic.MessageNewParams{
-				Model: anthropic.F(
-					anthropic.ModelClaude_3_5_Sonnet_20240620,
-				),
-				MaxTokens: anthropic.F(int64(4096)),
-				Messages:  anthropic.F(*messages),
-				Tools:     anthropic.F(tools),
+			CreateMessageRequest{
+				Model:     "claude-3-5-sonnet-20240620",
+				MaxTokens: 4096,
+				Messages:  *messages,
+				Tools:     tools,
 			},
 		)
 	}
@@ -103,14 +105,13 @@ func runPrompt(
 		return err
 	}
 
-	message := *messagePtr // Dereference the pointer
 	fmt.Print(responseStyle.Render("\nClaude: "))
 
-	toolResults := []anthropic.ContentBlockParamUnion{}
+	toolResults := []ContentBlock{}
 
 	for _, block := range message.Content {
-		switch block := block.AsUnion().(type) {
-		case anthropic.TextBlock:
+		switch block.Type {
+		case "text":
 			if err := updateRenderer(); err != nil {
 				return fmt.Errorf("error updating renderer: %v", err)
 			}
@@ -122,7 +123,7 @@ func runPrompt(
 			}
 			fmt.Print(str)
 
-		case anthropic.ToolUseBlock:
+		case "tool_use":
 			log.Info("🔧 Using tool", "name", block.Name)
 
 			parts := strings.Split(block.Name, "__")
@@ -146,18 +147,24 @@ func runPrompt(
 
 			var toolResultPtr *mcp.CallToolResult
 			action := func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				ctx, cancel := context.WithTimeout(
+					context.Background(),
+					10*time.Second,
+				)
 				defer cancel()
 
-				toolResultPtr, err = mcpClient.CallTool(ctx, mcp.CallToolRequest{
-					Params: struct {
-						Name      string                 `json:"name"`
-						Arguments map[string]interface{} `json:"arguments,omitempty"`
-					}{
-						Name:      toolName,
-						Arguments: toolArgs,
+				toolResultPtr, err = mcpClient.CallTool(
+					ctx,
+					mcp.CallToolRequest{
+						Params: struct {
+							Name      string                 `json:"name"`
+							Arguments map[string]interface{} `json:"arguments,omitempty"`
+						}{
+							Name:      toolName,
+							Arguments: toolArgs,
+						},
 					},
-				})
+				)
 			}
 			_ = spinner.New().
 				Title(fmt.Sprintf("Running tool %s...", toolName)).
@@ -165,31 +172,55 @@ func runPrompt(
 				Run()
 
 			if err != nil {
-				errMsg := fmt.Sprintf("Error calling tool %s: %v", toolName, err)
+				errMsg := fmt.Sprintf(
+					"Error calling tool %s: %v",
+					toolName,
+					err,
+				)
 				fmt.Printf("\n%s\n", errorStyle.Render(errMsg))
 
 				// Add error message as tool result
-				toolResults = append(toolResults,
-					anthropic.NewToolResultBlock(block.ID, errMsg, true))
+				toolResults = append(toolResults, ContentBlock{
+					Type:      "tool_result",
+					ToolUseID: block.ID,
+					Content: []ContentBlock{{
+						Type: "text",
+						Text: errMsg,
+					}},
+				})
 				continue
 			}
 
-			toolResult := *toolResultPtr // Dereference the pointer
-			resultJSON, err := json.Marshal(toolResult)
+			toolResult := *toolResultPtr
+			// Add the tool result directly to messages array as JSON string
+			resultJSON, err := json.Marshal(toolResult.Content)
 			if err != nil {
-				fmt.Printf("Error marshaling tool result: %v\n", err)
+				errMsg := fmt.Sprintf("Error marshaling tool result: %v", err)
+				fmt.Printf("\n%s\n", errorStyle.Render(errMsg))
 				continue
 			}
 
-			toolResults = append(toolResults,
-				anthropic.NewToolResultBlock(block.ID, string(resultJSON), toolResult.IsError))
+			toolResults = append(toolResults, ContentBlock{
+				Type:      "tool_result",
+				ToolUseID: block.ID,
+				Content: []ContentBlock{{
+					Type: "text",
+					Text: string(resultJSON),
+				}},
+			})
 		}
 	}
 
-	*messages = append(*messages, message.ToParam())
+	*messages = append(*messages, MessageParam{
+		Role:    "assistant",
+		Content: message.Content,
+	})
 
 	if len(toolResults) > 0 {
-		*messages = append(*messages, anthropic.NewUserMessage(toolResults...))
+		*messages = append(*messages, MessageParam{
+			Role:    "user",
+			Content: toolResults,
+		})
 		// Make another call to get Claude's response to the tool results
 		return runPrompt(client, mcpClients, tools, "", messages)
 	}
@@ -229,11 +260,9 @@ func runMCPHost() error {
 		log.Info("Server connected", "name", name)
 	}
 
-	client := anthropic.NewClient(
-		option.WithAPIKey(apiKey),
-	)
+	client := NewAnthropicClient(apiKey)
 
-	var allTools []anthropic.ToolParam
+	var allTools []Tool
 	for serverName, mcpClient := range mcpClients {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		toolsResult, err := mcpClient.ListTools(ctx, mcp.ListToolsRequest{})
@@ -265,7 +294,7 @@ func runMCPHost() error {
 		return fmt.Errorf("error initializing renderer: %v", err)
 	}
 
-	messages := make([]anthropic.MessageParam, 0)
+	messages := make([]MessageParam, 0)
 
 	// Main interaction loop
 	for {

@@ -14,7 +14,6 @@ import (
 
 	"strings"
 
-	"github.com/anthropics/anthropic-sdk-go"
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -80,24 +79,20 @@ type MCPConfig struct {
 func mcpToolsToAnthropicTools(
 	serverName string,
 	mcpTools []mcp.Tool,
-) []anthropic.ToolParam {
-	anthropicTools := make([]anthropic.ToolParam, len(mcpTools))
+) []Tool {
+	anthropicTools := make([]Tool, len(mcpTools))
 
 	for i, tool := range mcpTools {
 		namespacedName := fmt.Sprintf("%s__%s", serverName, tool.Name)
 
-		schemaMap := map[string]interface{}{
-			"type":       tool.InputSchema.Type,
-			"properties": tool.InputSchema.Properties,
-		}
-		if len(tool.InputSchema.Required) > 0 {
-			schemaMap["required"] = tool.InputSchema.Required
-		}
-
-		anthropicTools[i] = anthropic.ToolParam{
-			Name:        anthropic.F(namespacedName),
-			Description: anthropic.F(tool.Description),
-			InputSchema: anthropic.Raw[interface{}](schemaMap),
+		anthropicTools[i] = Tool{
+			Name:        namespacedName,
+			Description: tool.Description,
+			InputSchema: InputSchema{
+				Type:       tool.InputSchema.Type,
+				Properties: tool.InputSchema.Properties,
+				Required:   tool.InputSchema.Required,
+			},
 		}
 	}
 
@@ -341,7 +336,7 @@ func handleToolsCommand(mcpClients map[string]*mcpclient.StdioMCPClient) {
 		termWidth := getTerminalWidth()
 		contentWidth := termWidth - 20
 		serverBoxStyle := serverBox.Width(contentWidth)
-		
+
 		message := "Tools are currently disabled for this model."
 		boxedContent := serverBoxStyle.Render(message)
 		fmt.Print(boxedContent)

@@ -384,11 +384,6 @@ func runOllamaPrompt(
 			}
 
 			toolResult := *toolResultPtr
-			log.Debug("Tool result details",
-				"isError", toolResult.IsError,
-				"result", toolResult.Result,
-				"raw", fmt.Sprintf("%+v", toolResult))
-
 			// Check if there's an error in the tool result
 			if toolResult.IsError {
 				errMsg := fmt.Sprintf("Tool error: %v", toolResult.Result)
