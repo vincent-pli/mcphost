@@ -34,30 +34,30 @@ var (
 )
 
 func modelSupportsTools(client *api.Client, modelName string) bool {
-    resp, err := client.Show(context.Background(), &api.ShowRequest{
-        Model: modelName,
-    })
-    
-    if err != nil {
-        log.Error("Failed to get model info", "error", err)
-        return false
-    }
+	resp, err := client.Show(context.Background(), &api.ShowRequest{
+		Model: modelName,
+	})
 
-    // Check if model details indicate function calling support
-    // This looks for function calling capability in model details
-    if resp.ModelInfo != nil {
-        if format, ok := resp.ModelInfo["format"].(string); ok {
-            return strings.Contains(strings.ToLower(format), "functions")
-        }
-    }
+	if err != nil {
+		log.Error("Failed to get model info", "error", err)
+		return false
+	}
 
-    return false
+	// Check if model details indicate function calling support
+	// This looks for function calling capability in model details
+	if resp.Modelfile != "" {
+		if strings.Contains(resp.Modelfile, "<tools>") {
+			return true
+		}
+	}
+
+	return false
 }
 
 func init() {
 	ollamaCmd.Flags().
 		StringVar(&modelName, "model", "", "Ollama model to use (required)")
-	ollamaCmd.MarkFlagRequired("model")
+	_ = ollamaCmd.MarkFlagRequired("model")
 	rootCmd.AddCommand(ollamaCmd)
 }
 
@@ -164,7 +164,10 @@ func runOllama() error {
 	if modelSupportsTools(client, modelName) {
 		activeClients = mcpClients // Use the full set of clients
 		for serverName, mcpClient := range mcpClients {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(
+				context.Background(),
+				10*time.Second,
+			)
 			toolsResult, err := mcpClient.ListTools(ctx, mcp.ListToolsRequest{})
 			cancel()
 
