@@ -244,7 +244,12 @@ When you do need to use a tool, explain what you're doing first.`,
 		}
 
 		// Handle slash commands
-		handled, err := handleSlashCommand(prompt, mcpConfig, activeClients, messages)
+		handled, err := handleSlashCommand(
+			prompt,
+			mcpConfig,
+			activeClients,
+			messages,
+		)
 		if err != nil {
 			return err
 		}
@@ -398,17 +403,20 @@ func runOllamaPrompt(
 				continue
 			}
 
-			// Add the tool result directly to messages array as JSON string
-			resultJSON, err := json.Marshal(toolResult.Content)
+			// Convert the tool result to a proper JSON string
+			var resultContent string
+			jsonBytes, err := json.Marshal(toolResult)
 			if err != nil {
 				errMsg := fmt.Sprintf("Error marshaling tool result: %v", err)
 				fmt.Printf("\n%s\n", errorStyle.Render(errMsg))
-				continue
+				resultContent = fmt.Sprintf(`{"error": %q}`, errMsg)
+			} else {
+				resultContent = string(jsonBytes)
 			}
 
 			*messages = append(*messages, api.Message{
 				Role:    "tool",
-				Content: string(resultJSON),
+				Content: resultContent,
 			})
 
 		}
