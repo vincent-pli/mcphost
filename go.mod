@@ -7,7 +7,7 @@ require (
 	github.com/charmbracelet/huh/spinner v0.0.0-20241127125741-aad810dfbce6
 	github.com/charmbracelet/lipgloss v1.0.0
 	github.com/charmbracelet/log v0.4.0
-	github.com/mark3labs/mcp-go v0.5.4
+	github.com/mark3labs/mcp-go v0.5.8
 	github.com/ollama/ollama v0.5.1
 	github.com/spf13/cobra v1.8.1
 	golang.org/x/term v0.22.0
