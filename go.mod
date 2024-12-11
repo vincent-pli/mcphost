@@ -3,7 +3,6 @@ module github.com/mark3labs/mcphost
 go 1.23.3
 
 require (
-	github.com/anthropics/anthropic-sdk-go v0.2.0-alpha.5
 	github.com/charmbracelet/huh v0.3.0
 	github.com/charmbracelet/huh/spinner v0.0.0-20241127125741-aad810dfbce6
 	github.com/charmbracelet/lipgloss v1.0.0
@@ -47,10 +46,6 @@ require (
 	github.com/muesli/termenv v0.15.3-0.20240618155329-98d742f6907a // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/tidwall/gjson v1.14.4 // indirect
-	github.com/tidwall/match v1.1.1 // indirect
-	github.com/tidwall/pretty v1.2.1 // indirect
-	github.com/tidwall/sjson v1.2.5 // indirect
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa // indirect
 	golang.org/x/sync v0.9.0 // indirect
 	golang.org/x/sys v0.27.0 // indirect
