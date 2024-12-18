@@ -357,17 +357,12 @@ func runOllamaPrompt(
 				)
 				defer cancel()
 
+				req := mcp.CallToolRequest{}
+				req.Params.Name = toolName
+				req.Params.Arguments = toolCall.Function.Arguments
 				toolResultPtr, err = mcpClient.CallTool(
 					ctx,
-					mcp.CallToolRequest{
-						Params: struct {
-							Name      string                 `json:"name"`
-							Arguments map[string]interface{} `json:"arguments,omitempty"`
-						}{
-							Name:      toolName,
-							Arguments: toolCall.Function.Arguments,
-						},
-					},
+					req,
 				)
 			}
 			_ = spinner.New().

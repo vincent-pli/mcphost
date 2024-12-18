@@ -59,10 +59,13 @@ var (
 )
 
 type MCPConfig struct {
-	MCPServers map[string]struct {
-		Command string   `json:"command"`
-		Args    []string `json:"args"`
-	} `json:"mcpServers"`
+	MCPServers map[string]ServerConfig `json:"mcpServers"`
+}
+
+type ServerConfig struct {
+	Command string            `json:"command"`
+	Args    []string          `json:"args"`
+	Env     map[string]string `json:"env,omitempty"`
 }
 
 func mcpToolsToAnthropicTools(
@@ -104,10 +107,7 @@ func loadMCPConfig() (*MCPConfig, error) {
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		// Create default config
 		defaultConfig := MCPConfig{
-			MCPServers: make(map[string]struct {
-				Command string   `json:"command"`
-				Args    []string `json:"args"`
-			}),
+			MCPServers: make(map[string]ServerConfig),
 		}
 
 		// Create the file with default config
@@ -148,8 +148,13 @@ func createMCPClients(
 	clients := make(map[string]*mcpclient.StdioMCPClient)
 
 	for name, server := range config.MCPServers {
+		var env []string
+		for k, v := range server.Env {
+			env = append(env, fmt.Sprintf("%s=%s", k, v))
+		}
 		client, err := mcpclient.NewStdioMCPClient(
 			server.Command,
+			env,
 			server.Args...)
 		if err != nil {
 			for _, c := range clients {
@@ -172,6 +177,7 @@ func createMCPClients(
 			Name:    "mcphost",
 			Version: "0.1.0",
 		}
+		initRequest.Params.Capabilities = mcp.ClientCapabilities{}
 
 		_, err = client.Initialize(ctx, initRequest)
 		if err != nil {

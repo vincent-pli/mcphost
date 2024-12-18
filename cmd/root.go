@@ -58,102 +58,102 @@ func init() {
 }
 
 func pruneMessages[T MessageParam | api.Message](messages []T) []T {
-    if len(messages) <= messageWindow {
-        return messages
-    }
+	if len(messages) <= messageWindow {
+		return messages
+	}
 
-    // Keep only the most recent messages based on window size
-    messages = messages[len(messages)-messageWindow:]
+	// Keep only the most recent messages based on window size
+	messages = messages[len(messages)-messageWindow:]
 
-    switch any(messages[0]).(type) {
-    case MessageParam:
-        // Handle Anthropic messages
-        toolUseIds := make(map[string]bool)
-        toolResultIds := make(map[string]bool)
+	switch any(messages[0]).(type) {
+	case MessageParam:
+		// Handle Anthropic messages
+		toolUseIds := make(map[string]bool)
+		toolResultIds := make(map[string]bool)
 
-        // First pass: collect all tool use and result IDs
-        for _, msg := range messages {
-            m := any(msg).(MessageParam)
-            for _, block := range m.Content {
-                if block.Type == "tool_use" {
-                    toolUseIds[block.ID] = true
-                } else if block.Type == "tool_result" {
-                    toolResultIds[block.ToolUseID] = true
-                }
-            }
-        }
+		// First pass: collect all tool use and result IDs
+		for _, msg := range messages {
+			m := any(msg).(MessageParam)
+			for _, block := range m.Content {
+				if block.Type == "tool_use" {
+					toolUseIds[block.ID] = true
+				} else if block.Type == "tool_result" {
+					toolResultIds[block.ToolUseID] = true
+				}
+			}
+		}
 
-        // Second pass: filter out orphaned tool calls/results
-        var prunedMessages []T
-        for _, msg := range messages {
-            m := any(msg).(MessageParam)
-            var prunedBlocks []ContentBlock
-            for _, block := range m.Content {
-                keep := true
-                if block.Type == "tool_use" {
-                    keep = toolResultIds[block.ID]
-                } else if block.Type == "tool_result" {
-                    keep = toolUseIds[block.ToolUseID]
-                }
-                if keep {
-                    prunedBlocks = append(prunedBlocks, block)
-                }
-            }
-            // Only include messages that have content or are not assistant messages
-            if (len(prunedBlocks) > 0 && m.Role == "assistant") || m.Role != "assistant" {
-                hasTextBlock := false
-                for _, block := range m.Content {
-                    if block.Type == "text" {
-                        hasTextBlock = true
-                        break
-                    }
-                }
-                if len(prunedBlocks) > 0 || hasTextBlock {
-                    m.Content = prunedBlocks
-                    prunedMessages = append(prunedMessages, any(m).(T))
-                }
-            }
-        }
-        return prunedMessages
+		// Second pass: filter out orphaned tool calls/results
+		var prunedMessages []T
+		for _, msg := range messages {
+			m := any(msg).(MessageParam)
+			var prunedBlocks []ContentBlock
+			for _, block := range m.Content {
+				keep := true
+				if block.Type == "tool_use" {
+					keep = toolResultIds[block.ID]
+				} else if block.Type == "tool_result" {
+					keep = toolUseIds[block.ToolUseID]
+				}
+				if keep {
+					prunedBlocks = append(prunedBlocks, block)
+				}
+			}
+			// Only include messages that have content or are not assistant messages
+			if (len(prunedBlocks) > 0 && m.Role == "assistant") || m.Role != "assistant" {
+				hasTextBlock := false
+				for _, block := range m.Content {
+					if block.Type == "text" {
+						hasTextBlock = true
+						break
+					}
+				}
+				if len(prunedBlocks) > 0 || hasTextBlock {
+					m.Content = prunedBlocks
+					prunedMessages = append(prunedMessages, any(m).(T))
+				}
+			}
+		}
+		return prunedMessages
 
-    case api.Message:
-        // Handle Ollama messages
-        var prunedMessages []T
-        for i, msg := range messages {
-            m := any(msg).(api.Message)
-            
-            // If this message has tool calls, ensure we keep the next message (tool response)
-            if len(m.ToolCalls) > 0 {
-                if i+1 < len(messages) {
-                    next := any(messages[i+1]).(api.Message)
-                    if next.Role == "tool" {
-                        prunedMessages = append(prunedMessages, msg)
-                        prunedMessages = append(prunedMessages, messages[i+1])
-                        continue
-                    }
-                }
-                // If no matching tool response, skip this message
-                continue
-            }
-            
-            // Skip tool responses that don't have a preceding tool call
-            if m.Role == "tool" {
-                if i > 0 {
-                    prev := any(messages[i-1]).(api.Message)
-                    if len(prev.ToolCalls) > 0 {
-                        continue // Already handled in the tool call case
-                    }
-                }
-                continue // Skip orphaned tool response
-            }
-            
-            // Keep all other messages
-            prunedMessages = append(prunedMessages, msg)
-        }
-        return prunedMessages
-    }
+	case api.Message:
+		// Handle Ollama messages
+		var prunedMessages []T
+		for i, msg := range messages {
+			m := any(msg).(api.Message)
 
-    return messages
+			// If this message has tool calls, ensure we keep the next message (tool response)
+			if len(m.ToolCalls) > 0 {
+				if i+1 < len(messages) {
+					next := any(messages[i+1]).(api.Message)
+					if next.Role == "tool" {
+						prunedMessages = append(prunedMessages, msg)
+						prunedMessages = append(prunedMessages, messages[i+1])
+						continue
+					}
+				}
+				// If no matching tool response, skip this message
+				continue
+			}
+
+			// Skip tool responses that don't have a preceding tool call
+			if m.Role == "tool" {
+				if i > 0 {
+					prev := any(messages[i-1]).(api.Message)
+					if len(prev.ToolCalls) > 0 {
+						continue // Already handled in the tool call case
+					}
+				}
+				continue // Skip orphaned tool response
+			}
+
+			// Keep all other messages
+			prunedMessages = append(prunedMessages, msg)
+		}
+		return prunedMessages
+	}
+
+	return messages
 }
 
 func getTerminalWidth() int {
@@ -297,17 +297,12 @@ func runPrompt(
 				)
 				defer cancel()
 
+				req := mcp.CallToolRequest{}
+				req.Params.Name = toolName
+				req.Params.Arguments = toolArgs
 				toolResultPtr, err = mcpClient.CallTool(
 					ctx,
-					mcp.CallToolRequest{
-						Params: struct {
-							Name      string                 `json:"name"`
-							Arguments map[string]interface{} `json:"arguments,omitempty"`
-						}{
-							Name:      toolName,
-							Arguments: toolArgs,
-						},
-					},
+					req,
 				)
 			}
 			_ = spinner.New().
