@@ -17,7 +17,8 @@ import (
 
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
-	api "github.com/ollama/ollama/api"
+	"github.com/mark3labs/mcphost/pkg/history"
+	"github.com/mark3labs/mcphost/pkg/llm"
 )
 
 var (
@@ -71,16 +72,16 @@ type ServerConfig struct {
 func mcpToolsToAnthropicTools(
 	serverName string,
 	mcpTools []mcp.Tool,
-) []Tool {
-	anthropicTools := make([]Tool, len(mcpTools))
+) []llm.Tool {
+	anthropicTools := make([]llm.Tool, len(mcpTools))
 
 	for i, tool := range mcpTools {
 		namespacedName := fmt.Sprintf("%s__%s", serverName, tool.Name)
 
-		anthropicTools[i] = Tool{
+		anthropicTools[i] = llm.Tool{
 			Name:        namespacedName,
 			Description: tool.Description,
-			InputSchema: InputSchema{
+			InputSchema: llm.Schema{
 				Type:       tool.InputSchema.Type,
 				Properties: tool.InputSchema.Properties,
 				Required:   tool.InputSchema.Required,
@@ -216,7 +217,7 @@ func handleSlashCommand(
 		handleHelpCommand()
 		return true, nil
 	case "/history":
-		handleHistoryCommand(messages)
+		handleHistoryCommand(messages.([]history.HistoryMessage))
 		return true, nil
 	case "/servers":
 		handleServersCommand(mcpConfig)
@@ -250,11 +251,18 @@ func handleHelpCommand() {
 	markdown.WriteString("- **/history**: Display conversation history\n")
 	markdown.WriteString("- **/quit**: Exit the application\n")
 	markdown.WriteString("\nYou can also press Ctrl+C at any time to quit.\n")
-	markdown.WriteString("\n## Subcommands\n\n")
+
+	markdown.WriteString("\n## Available Models\n\n")
+	markdown.WriteString("Specify models using the --model or -m flag:\n\n")
 	markdown.WriteString(
-		"- **ollama**: Use an Ollama model instead of Claude\n",
+		"- **Anthropic Claude**: `anthropic:claude-3-5-sonnet-latest`\n",
 	)
-	markdown.WriteString("  Example: `mcphost ollama --model mistral`\n")
+	markdown.WriteString("- **Ollama Models**: `ollama:modelname`\n")
+	markdown.WriteString("\nExamples:\n")
+	markdown.WriteString("```\n")
+	markdown.WriteString("mcphost -m anthropic:claude-3-5-sonnet-latest\n")
+	markdown.WriteString("mcphost -m ollama:qwen2.5:3b\n")
+	markdown.WriteString("```\n")
 
 	rendered, err := renderer.Render(markdown.String())
 	if err != nil {
@@ -433,7 +441,7 @@ func handleToolsCommand(mcpClients map[string]*mcpclient.StdioMCPClient) {
 	// Wrap the entire content in the container
 	fmt.Print("\n" + containerStyle.Render(l.String()) + "\n")
 }
-func displayMessageHistory(messages interface{}) {
+func displayMessageHistory(messages []history.HistoryMessage) {
 	if err := updateRenderer(); err != nil {
 		fmt.Printf(
 			"\n%s\n",
@@ -445,97 +453,65 @@ func displayMessageHistory(messages interface{}) {
 	var markdown strings.Builder
 	markdown.WriteString("# Conversation History\n\n")
 
-	switch msgs := messages.(type) {
-	case []MessageParam: // Anthropic messages
-		for _, msg := range msgs {
-			roleTitle := "## User"
-			if msg.Role == "assistant" {
-				roleTitle = "## Assistant"
-			}
-			markdown.WriteString(roleTitle + "\n\n")
+	for _, msg := range messages {
+		roleTitle := "## User"
+		if msg.Role == "assistant" {
+			roleTitle = "## Assistant"
+		} else if msg.Role == "system" {
+			roleTitle = "## System"
+		}
+		markdown.WriteString(roleTitle + "\n\n")
 
-			for _, block := range msg.Content {
-				switch block.Type {
-				case "text":
-					markdown.WriteString("### Text\n")
-					markdown.WriteString(block.Text + "\n\n")
+		for _, block := range msg.Content {
+			switch block.Type {
+			case "text":
+				markdown.WriteString("### Text\n")
+				markdown.WriteString(block.Text + "\n\n")
 
-				case "tool_use":
-					markdown.WriteString("### Tool Use\n")
-					markdown.WriteString(fmt.Sprintf("**Tool:** %s\n\n", block.Name))
-					if block.Input != nil {
-						prettyInput, err := json.MarshalIndent(block.Input, "", "  ")
-						if err != nil {
-							markdown.WriteString(fmt.Sprintf("Error formatting input: %v\n\n", err))
-						} else {
-							markdown.WriteString("**Input:**\n```json\n")
-							markdown.WriteString(string(prettyInput))
+			case "tool_use":
+				markdown.WriteString("### Tool Use\n")
+				markdown.WriteString(
+					fmt.Sprintf("**Tool:** %s\n\n", block.Name),
+				)
+				if block.Input != nil {
+					prettyInput, err := json.MarshalIndent(
+						block.Input,
+						"",
+						"  ",
+					)
+					if err != nil {
+						markdown.WriteString(
+							fmt.Sprintf("Error formatting input: %v\n\n", err),
+						)
+					} else {
+						markdown.WriteString("**Input:**\n```json\n")
+						markdown.WriteString(string(prettyInput))
+						markdown.WriteString("\n```\n\n")
+					}
+				}
+
+			case "tool_result":
+				markdown.WriteString("### Tool Result\n")
+				markdown.WriteString(
+					fmt.Sprintf("**Tool ID:** %s\n\n", block.ToolUseID),
+				)
+				switch v := block.Content.(type) {
+				case string:
+					markdown.WriteString("```\n")
+					markdown.WriteString(v)
+					markdown.WriteString("\n```\n\n")
+				case []history.ContentBlock:
+					for _, contentBlock := range v {
+						if contentBlock.Type == "text" {
+							markdown.WriteString("```\n")
+							markdown.WriteString(contentBlock.Text)
 							markdown.WriteString("\n```\n\n")
 						}
 					}
-
-				case "tool_result":
-					markdown.WriteString("### Tool Result\n")
-					markdown.WriteString(fmt.Sprintf("**Tool ID:** %s\n\n", block.ToolUseID))
-					switch v := block.Content.(type) {
-					case string:
-						markdown.WriteString("```\n")
-						markdown.WriteString(v)
-						markdown.WriteString("\n```\n\n")
-					case []ContentBlock:
-						for _, contentBlock := range v {
-							if contentBlock.Type == "text" {
-								markdown.WriteString("```\n")
-								markdown.WriteString(contentBlock.Text)
-								markdown.WriteString("\n```\n\n")
-							}
-						}
-					}
 				}
 			}
-			markdown.WriteString("---\n\n")
 		}
-
-	case []api.Message: // Ollama messages
-		for _, msg := range msgs {
-			roleTitle := "## User"
-			if msg.Role == "assistant" {
-				roleTitle = "## Assistant"
-			} else if msg.Role == "system" {
-				roleTitle = "## System"
-			}
-			markdown.WriteString(roleTitle + "\n\n")
-
-			// Handle content
-			markdown.WriteString("### Content\n")
-			markdown.WriteString(msg.Content + "\n\n")
-
-			// Handle tool calls if present
-			if len(msg.ToolCalls) > 0 {
-				for _, toolCall := range msg.ToolCalls {
-					markdown.WriteString("### Tool Call\n")
-					markdown.WriteString(fmt.Sprintf("**Tool:** %s\n\n", toolCall.Function.Name))
-
-					prettyArgs, err := json.MarshalIndent(toolCall.Function.Arguments, "", "  ")
-					if err != nil {
-						markdown.WriteString(fmt.Sprintf("Error formatting arguments: %v\n\n", err))
-					} else {
-						markdown.WriteString("**Arguments:**\n```json\n")
-						markdown.WriteString(string(prettyArgs))
-						markdown.WriteString("\n```\n\n")
-					}
-				}
-			}
-
-			// If there's a tool result, display it
-			if msg.Content != "" && len(msg.ToolCalls) > 0 {
-				markdown.WriteString("### Result\n")
-				markdown.WriteString("```\n")
-				markdown.WriteString(msg.Content)
-				markdown.WriteString("\n```\n\n")
-			}
-			markdown.WriteString("---\n\n")
-		}
+		markdown.WriteString("---\n\n")
 	}
 
 	// Render the markdown

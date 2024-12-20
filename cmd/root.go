@@ -12,20 +12,25 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/huh/spinner"
 	"github.com/charmbracelet/log"
-	"github.com/ollama/ollama/api"
 
 	"github.com/charmbracelet/glamour"
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcphost/pkg/history"
+	"github.com/mark3labs/mcphost/pkg/llm"
+	"github.com/mark3labs/mcphost/pkg/llm/anthropic"
+	"github.com/mark3labs/mcphost/pkg/llm/ollama"
+	"github.com/mark3labs/mcphost/pkg/llm/openai"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
 
 var (
-	renderer *glamour.TermRenderer
-
+	renderer      *glamour.TermRenderer
 	configFile    string
 	messageWindow int
+	modelFlag     string // New flag for model selection
+	openaiBaseURL string // Base URL for OpenAI API
 )
 
 const (
@@ -36,9 +41,19 @@ const (
 
 var rootCmd = &cobra.Command{
 	Use:   "mcphost",
-	Short: "Chat with Claude 3.5 Sonnet or Ollama models",
-	Long: `MCPHost is a CLI tool that allows you to interact with Claude 3.5 Sonnet or Ollama models.
-It supports various tools through MCP servers and provides streaming responses.`,
+	Short: "Chat with AI models through a unified interface",
+	Long: `MCPHost is a CLI tool that allows you to interact with various AI models
+through a unified interface. It supports various tools through MCP servers
+and provides streaming responses.
+
+Available models can be specified using the --model flag:
+- Anthropic Claude (default): anthropic:claude-3-5-sonnet-latest
+- OpenAI: openai:gpt-4
+- Ollama models: ollama:modelname
+
+Example:
+  mcphost -m ollama:qwen2.5:3b
+  mcphost -m openai:gpt-4`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runMCPHost()
 	},
@@ -50,14 +65,65 @@ func Execute() {
 	}
 }
 
+var debugMode bool
+
 func init() {
 	rootCmd.PersistentFlags().
 		StringVar(&configFile, "config", "", "config file (default is $HOME/mcp.json)")
 	rootCmd.PersistentFlags().
 		IntVar(&messageWindow, "message-window", 10, "number of messages to keep in context")
+	rootCmd.PersistentFlags().
+		StringVarP(&modelFlag, "model", "m", "anthropic:claude-3-5-sonnet-latest",
+			"model to use (format: provider:model, e.g. anthropic:claude-3-5-sonnet-latest or ollama:qwen2.5:3b)")
+
+	// Add debug flag
+	rootCmd.PersistentFlags().
+		BoolVar(&debugMode, "debug", false, "enable debug logging")
+	rootCmd.PersistentFlags().
+		StringVar(&openaiBaseURL, "openai-url", "", "base URL for OpenAI API (defaults to api.openai.com)")
 }
 
-func pruneMessages[T MessageParam | api.Message](messages []T) []T {
+// Add new function to create provider
+func createProvider(modelString string) (llm.Provider, error) {
+	parts := strings.SplitN(modelString, ":", 2)
+	if len(parts) < 2 {
+		return nil, fmt.Errorf(
+			"invalid model format. Expected provider:model, got %s",
+			modelString,
+		)
+	}
+
+	provider := parts[0]
+	model := parts[1]
+
+	switch provider {
+	case "anthropic":
+		apiKey := os.Getenv("ANTHROPIC_API_KEY")
+		if apiKey == "" {
+			return nil, fmt.Errorf(
+				"ANTHROPIC_API_KEY environment variable not set",
+			)
+		}
+		return anthropic.NewProvider(apiKey), nil
+
+	case "ollama":
+		return ollama.NewProvider(model)
+
+	case "openai":
+		apiKey := os.Getenv("OPENAI_API_KEY")
+		if apiKey == "" {
+			return nil, fmt.Errorf(
+				"OPENAI_API_KEY environment variable not set",
+			)
+		}
+		return openai.NewProvider(apiKey, openaiBaseURL, model), nil
+
+	default:
+		return nil, fmt.Errorf("unsupported provider: %s", provider)
+	}
+}
+
+func pruneMessages(messages []history.HistoryMessage) []history.HistoryMessage {
 	if len(messages) <= messageWindow {
 		return messages
 	}
@@ -65,95 +131,53 @@ func pruneMessages[T MessageParam | api.Message](messages []T) []T {
 	// Keep only the most recent messages based on window size
 	messages = messages[len(messages)-messageWindow:]
 
-	switch any(messages[0]).(type) {
-	case MessageParam:
-		// Handle Anthropic messages
-		toolUseIds := make(map[string]bool)
-		toolResultIds := make(map[string]bool)
+	// Handle messages
+	toolUseIds := make(map[string]bool)
+	toolResultIds := make(map[string]bool)
 
-		// First pass: collect all tool use and result IDs
-		for _, msg := range messages {
-			m := any(msg).(MessageParam)
-			for _, block := range m.Content {
-				if block.Type == "tool_use" {
-					toolUseIds[block.ID] = true
-				} else if block.Type == "tool_result" {
-					toolResultIds[block.ToolUseID] = true
-				}
+	// First pass: collect all tool use and result IDs
+	for _, msg := range messages {
+		for _, block := range msg.Content {
+			if block.Type == "tool_use" {
+				toolUseIds[block.ID] = true
+			} else if block.Type == "tool_result" {
+				toolResultIds[block.ToolUseID] = true
 			}
 		}
-
-		// Second pass: filter out orphaned tool calls/results
-		var prunedMessages []T
-		for _, msg := range messages {
-			m := any(msg).(MessageParam)
-			var prunedBlocks []ContentBlock
-			for _, block := range m.Content {
-				keep := true
-				if block.Type == "tool_use" {
-					keep = toolResultIds[block.ID]
-				} else if block.Type == "tool_result" {
-					keep = toolUseIds[block.ToolUseID]
-				}
-				if keep {
-					prunedBlocks = append(prunedBlocks, block)
-				}
-			}
-			// Only include messages that have content or are not assistant messages
-			if (len(prunedBlocks) > 0 && m.Role == "assistant") || m.Role != "assistant" {
-				hasTextBlock := false
-				for _, block := range m.Content {
-					if block.Type == "text" {
-						hasTextBlock = true
-						break
-					}
-				}
-				if len(prunedBlocks) > 0 || hasTextBlock {
-					m.Content = prunedBlocks
-					prunedMessages = append(prunedMessages, any(m).(T))
-				}
-			}
-		}
-		return prunedMessages
-
-	case api.Message:
-		// Handle Ollama messages
-		var prunedMessages []T
-		for i, msg := range messages {
-			m := any(msg).(api.Message)
-
-			// If this message has tool calls, ensure we keep the next message (tool response)
-			if len(m.ToolCalls) > 0 {
-				if i+1 < len(messages) {
-					next := any(messages[i+1]).(api.Message)
-					if next.Role == "tool" {
-						prunedMessages = append(prunedMessages, msg)
-						prunedMessages = append(prunedMessages, messages[i+1])
-						continue
-					}
-				}
-				// If no matching tool response, skip this message
-				continue
-			}
-
-			// Skip tool responses that don't have a preceding tool call
-			if m.Role == "tool" {
-				if i > 0 {
-					prev := any(messages[i-1]).(api.Message)
-					if len(prev.ToolCalls) > 0 {
-						continue // Already handled in the tool call case
-					}
-				}
-				continue // Skip orphaned tool response
-			}
-
-			// Keep all other messages
-			prunedMessages = append(prunedMessages, msg)
-		}
-		return prunedMessages
 	}
 
-	return messages
+	// Second pass: filter out orphaned tool calls/results
+	var prunedMessages []history.HistoryMessage
+	for _, msg := range messages {
+		var prunedBlocks []history.ContentBlock
+		for _, block := range msg.Content {
+			keep := true
+			if block.Type == "tool_use" {
+				keep = toolResultIds[block.ID]
+			} else if block.Type == "tool_result" {
+				keep = toolUseIds[block.ToolUseID]
+			}
+			if keep {
+				prunedBlocks = append(prunedBlocks, block)
+			}
+		}
+		// Only include messages that have content or are not assistant messages
+		if (len(prunedBlocks) > 0 && msg.Role == "assistant") ||
+			msg.Role != "assistant" {
+			hasTextBlock := false
+			for _, block := range msg.Content {
+				if block.Type == "text" {
+					hasTextBlock = true
+					break
+				}
+			}
+			if len(prunedBlocks) > 0 || hasTextBlock {
+				msg.Content = prunedBlocks
+				prunedMessages = append(prunedMessages, msg)
+			}
+		}
+	}
+	return prunedMessages
 }
 
 func getTerminalWidth() int {
@@ -164,7 +188,7 @@ func getTerminalWidth() int {
 	return width - 20
 }
 
-func handleHistoryCommand(messages interface{}) {
+func handleHistoryCommand(messages []history.HistoryMessage) {
 	displayMessageHistory(messages)
 }
 
@@ -178,21 +202,22 @@ func updateRenderer() error {
 	return err
 }
 
+// Method implementations for simpleMessage
 func runPrompt(
-	client *AnthropicClient,
+	provider llm.Provider,
 	mcpClients map[string]*mcpclient.StdioMCPClient,
-	tools []Tool,
+	tools []llm.Tool,
 	prompt string,
-	messages *[]MessageParam,
+	messages *[]history.HistoryMessage,
 ) error {
 	// Display the user's prompt if it's not empty (i.e., not a tool response)
 	if prompt != "" {
 		fmt.Printf("\n%s\n", promptStyle.Render("You: "+prompt))
 		*messages = append(
 			*messages,
-			MessageParam{
+			history.HistoryMessage{
 				Role: "user",
-				Content: []ContentBlock{{
+				Content: []history.ContentBlock{{
 					Type: "text",
 					Text: prompt,
 				}},
@@ -200,21 +225,25 @@ func runPrompt(
 		)
 	}
 
-	var message *Message
+	var message llm.Message
 	var err error
 	backoff := initialBackoff
 	retries := 0
 
+	// Convert MessageParam to llm.Message for provider
+	// Messages already implement llm.Message interface
+	llmMessages := make([]llm.Message, len(*messages))
+	for i := range *messages {
+		llmMessages[i] = &(*messages)[i]
+	}
+
 	for {
 		action := func() {
-			message, err = client.CreateMessage(
+			message, err = provider.CreateMessage(
 				context.Background(),
-				CreateMessageRequest{
-					Model:     "claude-3-5-sonnet-20240620",
-					MaxTokens: 4096,
-					Messages:  *messages,
-					Tools:     tools,
-				},
+				prompt,
+				llmMessages,
+				tools,
 			)
 		}
 		_ = spinner.New().Title("Thinking...").Action(action).Run()
@@ -247,137 +276,190 @@ func runPrompt(
 		break
 	}
 
-	if str, err := renderer.Render("\nClaude: "); err == nil {
+	var messageContent []history.ContentBlock
+
+	// Handle the message response
+	if str, err := renderer.Render("\nAssistant: "); err == nil {
 		fmt.Print(str)
 	}
 
-	toolResults := []ContentBlock{}
+	toolResults := []history.ContentBlock{}
+	messageContent = []history.ContentBlock{}
 
-	for _, block := range message.Content {
-		switch block.Type {
-		case "text":
-			if err := updateRenderer(); err != nil {
-				return fmt.Errorf("error updating renderer: %v", err)
-			}
-			str, err := renderer.Render(block.Text + "\n")
-			if err != nil {
-				log.Error("Failed to render response", "error", err)
-				fmt.Print(block.Text + "\n")
-				continue
-			}
+	// Add text content
+	if message.GetContent() != "" {
+		if err := updateRenderer(); err != nil {
+			return fmt.Errorf("error updating renderer: %v", err)
+		}
+		str, err := renderer.Render(message.GetContent() + "\n")
+		if err != nil {
+			log.Error("Failed to render response", "error", err)
+			fmt.Print(message.GetContent() + "\n")
+		} else {
 			fmt.Print(str)
+		}
+		messageContent = append(messageContent, history.ContentBlock{
+			Type: "text",
+			Text: message.GetContent(),
+		})
+	}
 
-		case "tool_use":
-			log.Info("🔧 Using tool", "name", block.Name)
+	// Handle tool calls
+	for _, toolCall := range message.GetToolCalls() {
+		log.Info("🔧 Using tool", "name", toolCall.GetName())
 
-			parts := strings.Split(block.Name, "__")
-			if len(parts) != 2 {
-				fmt.Printf("Error: Invalid tool name format: %s\n", block.Name)
-				continue
-			}
+		input, _ := json.Marshal(toolCall.GetArguments())
+		messageContent = append(messageContent, history.ContentBlock{
+			Type:  "tool_use",
+			ID:    toolCall.GetID(),
+			Name:  toolCall.GetName(),
+			Input: input,
+		})
 
-			serverName, toolName := parts[0], parts[1]
-			mcpClient, ok := mcpClients[serverName]
-			if !ok {
-				fmt.Printf("Error: Server not found: %s\n", serverName)
-				continue
-			}
+		// Log usage statistics if available
+		inputTokens, outputTokens := message.GetUsage()
+		if inputTokens > 0 || outputTokens > 0 {
+			log.Info("Usage statistics",
+				"input_tokens", inputTokens,
+				"output_tokens", outputTokens,
+				"total_tokens", inputTokens+outputTokens)
+		}
 
-			var toolArgs map[string]interface{}
-			if err := json.Unmarshal(block.Input, &toolArgs); err != nil {
-				fmt.Printf("Error parsing tool arguments: %v\n", err)
-				continue
-			}
+		parts := strings.Split(toolCall.GetName(), "__")
+		if len(parts) != 2 {
+			fmt.Printf(
+				"Error: Invalid tool name format: %s\n",
+				toolCall.GetName(),
+			)
+			continue
+		}
 
-			var toolResultPtr *mcp.CallToolResult
-			action := func() {
-				ctx, cancel := context.WithTimeout(
-					context.Background(),
-					10*time.Second,
-				)
-				defer cancel()
+		serverName, toolName := parts[0], parts[1]
+		mcpClient, ok := mcpClients[serverName]
+		if !ok {
+			fmt.Printf("Error: Server not found: %s\n", serverName)
+			continue
+		}
 
-				req := mcp.CallToolRequest{}
-				req.Params.Name = toolName
-				req.Params.Arguments = toolArgs
-				toolResultPtr, err = mcpClient.CallTool(
-					ctx,
-					req,
-				)
-			}
-			_ = spinner.New().
-				Title(fmt.Sprintf("Running tool %s...", toolName)).
-				Action(action).
-				Run()
+		var toolArgs map[string]interface{}
+		if err := json.Unmarshal(input, &toolArgs); err != nil {
+			fmt.Printf("Error parsing tool arguments: %v\n", err)
+			continue
+		}
 
-			if err != nil {
-				errMsg := fmt.Sprintf(
-					"Error calling tool %s: %v",
-					toolName,
-					err,
-				)
-				fmt.Printf("\n%s\n", errorStyle.Render(errMsg))
+		var toolResultPtr *mcp.CallToolResult
+		action := func() {
+			ctx, cancel := context.WithTimeout(
+				context.Background(),
+				10*time.Second,
+			)
+			defer cancel()
 
-				// Add error message as tool result
-				toolResults = append(toolResults, ContentBlock{
-					Type:      "tool_result",
-					ToolUseID: block.ID,
-					Content: []ContentBlock{{
-						Type: "text",
-						Text: errMsg,
-					}},
-				})
-				continue
-			}
+			req := mcp.CallToolRequest{}
+			req.Params.Name = toolName
+			req.Params.Arguments = toolArgs
+			toolResultPtr, err = mcpClient.CallTool(
+				ctx,
+				req,
+			)
+		}
+		_ = spinner.New().
+			Title(fmt.Sprintf("Running tool %s...", toolName)).
+			Action(action).
+			Run()
 
-			toolResult := *toolResultPtr
-			// Add the tool result directly to messages array as JSON string
-			resultJSON, err := json.Marshal(toolResult.Content)
-			if err != nil {
-				errMsg := fmt.Sprintf("Error marshaling tool result: %v", err)
-				fmt.Printf("\n%s\n", errorStyle.Render(errMsg))
-				continue
-			}
+		if err != nil {
+			errMsg := fmt.Sprintf(
+				"Error calling tool %s: %v",
+				toolName,
+				err,
+			)
+			fmt.Printf("\n%s\n", errorStyle.Render(errMsg))
 
-			toolResults = append(toolResults, ContentBlock{
+			// Add error message as tool result
+			toolResults = append(toolResults, history.ContentBlock{
 				Type:      "tool_result",
-				ToolUseID: block.ID,
-				Content: []ContentBlock{{
+				ToolUseID: toolCall.GetID(),
+				Content: []history.ContentBlock{{
 					Type: "text",
-					Text: string(resultJSON),
+					Text: errMsg,
 				}},
 			})
+			continue
+		}
+
+		toolResult := *toolResultPtr
+
+		if toolResult.Content != nil {
+			log.Debug("raw tool result content", "content", toolResult.Content)
+
+			// Create the tool result block
+			resultBlock := history.ContentBlock{
+				Type:      "tool_result",
+				ToolUseID: toolCall.GetID(),
+				Content:   toolResult.Content,
+			}
+
+			// Extract text content
+			var resultText string
+			// Handle array content directly since we know it's []interface{}
+			for _, item := range toolResult.Content {
+				if contentMap, ok := item.(map[string]interface{}); ok {
+					if text, ok := contentMap["text"]; ok {
+						resultText += fmt.Sprintf("%v ", text)
+					}
+				}
+			}
+
+			resultBlock.Text = strings.TrimSpace(resultText)
+			log.Debug("created tool result block",
+				"block", resultBlock,
+				"tool_id", toolCall.GetID())
+
+			toolResults = append(toolResults, resultBlock)
 		}
 	}
 
-	*messages = append(*messages, MessageParam{
-		Role:    "assistant",
-		Content: message.Content,
+	*messages = append(*messages, history.HistoryMessage{
+		Role:    message.GetRole(),
+		Content: messageContent,
 	})
 
 	if len(toolResults) > 0 {
-		*messages = append(*messages, MessageParam{
+		*messages = append(*messages, history.HistoryMessage{
 			Role:    "user",
 			Content: toolResults,
 		})
 		// Make another call to get Claude's response to the tool results
-		return runPrompt(client, mcpClients, tools, "", messages)
+		return runPrompt(provider, mcpClients, tools, "", messages)
 	}
-
-	log.Info("Usage statistics",
-		"input_tokens", message.Usage.InputTokens,
-		"output_tokens", message.Usage.OutputTokens,
-		"total_tokens", message.Usage.InputTokens+message.Usage.OutputTokens)
 
 	fmt.Println() // Add spacing
 	return nil
 }
 
 func runMCPHost() error {
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		return fmt.Errorf("ANTHROPIC_API_KEY environment variable not set")
+	// Set up logging based on debug flag
+	if debugMode {
+		log.SetLevel(log.DebugLevel)
+		// Enable caller information for debug logs
+		log.SetReportCaller(true)
+	} else {
+		log.SetLevel(log.InfoLevel)
+		log.SetReportCaller(false)
 	}
+
+	// Create the provider based on the model flag
+	provider, err := createProvider(modelFlag)
+	if err != nil {
+		return fmt.Errorf("error creating provider: %v", err)
+	}
+
+	// Split the model flag and get just the model name
+	parts := strings.SplitN(modelFlag, ":", 2)
+	log.Info("Model loaded",
+		"provider", provider.Name(),
+		"model", parts[1])
 
 	mcpConfig, err := loadMCPConfig()
 	if err != nil {
@@ -404,9 +486,7 @@ func runMCPHost() error {
 		log.Info("Server connected", "name", name)
 	}
 
-	client := NewAnthropicClient(apiKey)
-
-	var allTools []Tool
+	var allTools []llm.Tool
 	for serverName, mcpClient := range mcpClients {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		toolsResult, err := mcpClient.ListTools(ctx, mcp.ListToolsRequest{})
@@ -438,7 +518,7 @@ func runMCPHost() error {
 		return fmt.Errorf("error initializing renderer: %v", err)
 	}
 
-	messages := make([]MessageParam, 0)
+	messages := make([]history.HistoryMessage, 0)
 
 	// Main interaction loop
 	for {
@@ -485,7 +565,7 @@ func runMCPHost() error {
 		if len(messages) > 0 {
 			messages = pruneMessages(messages)
 		}
-		err = runPrompt(client, mcpClients, allTools, prompt, &messages)
+		err = runPrompt(provider, mcpClients, allTools, prompt, &messages)
 		if err != nil {
 			return err
 		}
