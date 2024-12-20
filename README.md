@@ -94,30 +94,29 @@ Each MCP server entry requires:
 
 ## Usage 🚀
 
-### Basic Commands
+MCPHost is a CLI tool that allows you to interact with various AI models through a unified interface. It supports various tools through MCP servers and provides streaming responses.
 
-1. Using Claude 3.5 Sonnet:
+### Available Models
+Models can be specified using the `--model` (`-m`) flag:
+- Anthropic Claude (default): `anthropic:claude-3-5-sonnet-latest`
+- OpenAI: `openai:gpt-4`
+- Ollama models: `ollama:modelname`
+
+### Examples
 ```bash
-mcphost
+# Use Ollama with Qwen model
+mcphost -m ollama:qwen2.5:3b
+
+# Use OpenAI's GPT-4
+mcphost -m openai:gpt-4
 ```
 
-2. Using Ollama:
-```bash
-mcphost ollama --model mistral
-```
-Note: Tool support in Ollama requires models that support function calling.
-
-### Additional Options
-
-- Custom config file:
-```bash
-mcphost --config /path/to/config.json
-```
-
-- Set message history window:
-```bash
-mcphost --message-window 15
-```
+### Flags
+- `--config string`: Config file location (default is $HOME/mcp.json)
+- `--debug`: Enable debug logging
+- `--message-window int`: Number of messages to keep in context (default: 10)
+- `-m, --model string`: Model to use (format: provider:model) (default "anthropic:claude-3-5-sonnet-latest")
+- `--openai-url string`: Base URL for OpenAI API (defaults to api.openai.com)
 
 ### Interactive Commands
 
