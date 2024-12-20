@@ -216,7 +216,7 @@ func (p *Provider) CreateToolResponse(
 					texts = append(texts, text)
 					continue
 				}
-				
+
 				// Then try array of text
 				if textArray, ok := block["text"].([]interface{}); ok {
 					for _, t := range textArray {
@@ -226,7 +226,7 @@ func (p *Provider) CreateToolResponse(
 					}
 					continue
 				}
-				
+
 				// Finally try nested content array
 				if contentArray, ok := block["content"].([]interface{}); ok {
 					for _, c := range contentArray {

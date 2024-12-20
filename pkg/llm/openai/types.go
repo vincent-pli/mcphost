@@ -9,12 +9,12 @@ type CreateRequest struct {
 }
 
 type MessageParam struct {
-	Role         string       `json:"role"`
-	Content      *string      `json:"content"`
+	Role         string        `json:"role"`
+	Content      *string       `json:"content"`
 	FunctionCall *FunctionCall `json:"function_call,omitempty"`
 	ToolCalls    []ToolCall    `json:"tool_calls,omitempty"`
-	Name         string       `json:"name,omitempty"`
-	ToolCallID   string       `json:"tool_call_id,omitempty"`
+	Name         string        `json:"name,omitempty"`
+	ToolCallID   string        `json:"tool_call_id,omitempty"`
 }
 
 type ToolCall struct {
