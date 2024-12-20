@@ -30,7 +30,7 @@ Currently supports:
 
 ## Requirements 📋
 
-- Go 1.23.3 or later
+- Go 1.23 or later
 - For Claude: An Anthropic API key
 - For Ollama: Local Ollama installation with desired models
 - One or more MCP-compatible tool servers
