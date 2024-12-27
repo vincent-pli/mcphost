@@ -3,3 +3,8 @@
 aidocs/
 .mcp.json
 *.log
+mcphost
+.idea
+test/
+build/
+scripts/
