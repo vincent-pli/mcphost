@@ -94,7 +94,7 @@ Each MCP server entry requires:
 
 ## Usage 🚀
 
-MCPHost is a CLI tool that allows you to interact with various AI models through a unified interface. It supports various tools through MCP servers and provides streaming responses.
+MCPHost is a CLI tool that allows you to interact with various AI models through a unified interface. It supports various tools through MCP servers.
 
 ### Available Models
 Models can be specified using the `--model` (`-m`) flag:
