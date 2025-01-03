@@ -8,3 +8,4 @@ mcphost
 test/
 build/
 scripts/
+dist/
