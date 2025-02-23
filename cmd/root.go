@@ -349,17 +349,11 @@ func runPrompt(
 
 		var toolResultPtr *mcp.CallToolResult
 		action := func() {
-			ctx, cancel := context.WithTimeout(
-				context.Background(),
-				10*time.Second,
-			)
-			defer cancel()
-
 			req := mcp.CallToolRequest{}
 			req.Params.Name = toolName
 			req.Params.Arguments = toolArgs
 			toolResultPtr, err = mcpClient.CallTool(
-				ctx,
+				context.Background(),
 				req,
 			)
 		}
