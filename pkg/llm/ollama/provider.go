@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/log"
-	"github.com/mark3labs/mcphost/pkg/history"
-	"github.com/mark3labs/mcphost/pkg/llm"
 	api "github.com/ollama/ollama/api"
+	"github.com/vincentpli/mcphost/pkg/history"
+	"github.com/vincentpli/mcphost/pkg/llm"
 )
 
 func boolPtr(b bool) *bool {
@@ -151,7 +151,7 @@ func (p *Provider) CreateMessage(
 		"num_messages", len(messages),
 		"num_tools", len(tools))
 
-	log.Debug("sending messages to Ollama", 
+	log.Debug("sending messages to Ollama",
 		"messages", ollamaMessages,
 		"num_tools", len(tools))
 

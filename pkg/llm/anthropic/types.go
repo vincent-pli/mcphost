@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/log"
-	"github.com/mark3labs/mcphost/pkg/llm"
+	"github.com/vincentpli/mcphost/pkg/llm"
 )
 
 type CreateRequest struct {

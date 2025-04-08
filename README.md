@@ -56,7 +56,7 @@ ollama serve
 ## Installation 📦
 
 ```bash
-go install github.com/mark3labs/mcphost@latest
+go install github.com/vincentpli/mcphost@latest
 ```
 
 ## Configuration ⚙️

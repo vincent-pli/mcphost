@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mark3labs/mcphost/pkg/llm"
 	api "github.com/ollama/ollama/api"
+	"github.com/vincentpli/mcphost/pkg/llm"
 )
 
 // OllamaMessage adapts Ollama's message format to our Message interface

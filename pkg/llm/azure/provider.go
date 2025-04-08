@@ -1,4 +1,4 @@
-package openai
+package azure
 
 import (
 	"context"
@@ -30,9 +30,9 @@ func convertSchema(schema llm.Schema) map[string]interface{} {
 	}
 }
 
-func NewProvider(apiKey string, baseURL string, model string) *Provider {
+func NewProvider(apiKey string, azure_endpoint string, azure_deployment string, api_version string, model string) *Provider {
 	return &Provider{
-		client: NewClient(apiKey, baseURL),
+		client: NewClient(apiKey, azure_endpoint, azure_deployment, api_version),
 		model:  model,
 	}
 }
@@ -190,7 +190,7 @@ func (p *Provider) SupportsTools() bool {
 }
 
 func (p *Provider) Name() string {
-	return "openai"
+	return "azure"
 }
 
 func (p *Provider) CreateToolResponse(

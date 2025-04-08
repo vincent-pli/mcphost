@@ -16,12 +16,13 @@ import (
 	"github.com/charmbracelet/glamour"
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcphost/pkg/history"
-	"github.com/mark3labs/mcphost/pkg/llm"
-	"github.com/mark3labs/mcphost/pkg/llm/anthropic"
-	"github.com/mark3labs/mcphost/pkg/llm/ollama"
-	"github.com/mark3labs/mcphost/pkg/llm/openai"
 	"github.com/spf13/cobra"
+	"github.com/vincentpli/mcphost/pkg/history"
+	"github.com/vincentpli/mcphost/pkg/llm"
+	"github.com/vincentpli/mcphost/pkg/llm/anthropic"
+	"github.com/vincentpli/mcphost/pkg/llm/azure"
+	"github.com/vincentpli/mcphost/pkg/llm/ollama"
+	"github.com/vincentpli/mcphost/pkg/llm/openai"
 	"golang.org/x/term"
 )
 
@@ -133,6 +134,21 @@ func createProvider(modelString string) (llm.Provider, error) {
 		}
 		return openai.NewProvider(apiKey, openaiBaseURL, model), nil
 
+	case "azure":
+		apiKey := openaiAPIKey
+		if apiKey == "" {
+			apiKey = os.Getenv("OPENAI_API_KEY")
+		}
+		azureEndpoint := os.Getenv("AZURE_ENDPOINT")
+		azureDeployment := os.Getenv("AZURE_DEPLOYMENT")
+		apiVersion := os.Getenv("API_VERSION")
+
+		if apiKey == "" || azureEndpoint == "" || azureDeployment == "" || apiVersion == "" {
+			return nil, fmt.Errorf(
+				"environment variables missing\n, need 'OPENAI_API_KEY', 'AZURE_ENDPOINT', 'AZURE_DEPLOYMENT' and 'API_VERSION'",
+			)
+		}
+		return azure.NewProvider(apiKey, azureEndpoint, azureDeployment, apiVersion, model), nil
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", provider)
 	}
@@ -292,7 +308,6 @@ func runPrompt(
 	}
 
 	var messageContent []history.ContentBlock
-
 	// Handle the message response
 	if str, err := renderer.Render("\nAssistant: "); err == nil {
 		fmt.Print(str)
