@@ -301,6 +301,7 @@ func runPrompt(
 				continue
 			}
 			// If it's not an overloaded error, return the error immediately
+			log.Errorf("Invoke LLM hit error, mcphost will shutdown, fix the error and try again: %s", err)
 			return err
 		}
 		// If we got here, the request succeeded
