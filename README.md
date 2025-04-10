@@ -52,7 +52,10 @@ ollama pull mistral
 ```bash
 ollama serve
 ```
-
+3. Support Deekseek:
+```
+mcphost -m openai:deepseek-chat --openai-url https://api.deepseek.com --openai-api-key <your deepseek api key>
+```
 ## Installation 📦
 
 ```bash
