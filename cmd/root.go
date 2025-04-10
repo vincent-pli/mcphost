@@ -300,6 +300,11 @@ func runPrompt(
 				retries++
 				continue
 			}
+			// rate limit is not a fatal error, let user try again
+			if strings.Contains(err.Error(), "rate limit") {
+				log.Warnf("llm hit rate limit: %s", err)
+				return nil
+			}
 			// If it's not an overloaded error, return the error immediately
 			log.Errorf("Invoke LLM hit error, mcphost will shutdown, fix the error and try again: %s", err)
 			return err
@@ -429,9 +434,9 @@ func runPrompt(
 			var resultText string
 			// Handle array content directly since we know it's []interface{}
 			for _, item := range toolResult.Content {
-				if contentMap, ok := item.(map[string]interface{}); ok {
-					if text, ok := contentMap["text"]; ok {
-						resultText += fmt.Sprintf("%v ", text)
+				if content, ok := item.(mcp.TextContent); ok {
+					if content.Text != "" {
+						resultText += fmt.Sprintf("%v ", content.Text)
 					}
 				}
 			}

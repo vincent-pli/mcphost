@@ -9,7 +9,7 @@ require (
 	github.com/charmbracelet/huh/spinner v0.0.0-20241127125741-aad810dfbce6
 	github.com/charmbracelet/lipgloss v1.0.0
 	github.com/charmbracelet/log v0.4.0
-	github.com/mark3labs/mcp-go v0.8.2
+	github.com/mark3labs/mcp-go v0.18.0
 	github.com/ollama/ollama v0.5.1
 	github.com/spf13/cobra v1.8.1
 	golang.org/x/term v0.30.0
@@ -25,6 +25,7 @@ require (
 	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
 	github.com/muesli/reflow v0.3.0 // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yuin/goldmark v1.7.4 // indirect
 	github.com/yuin/goldmark-emoji v1.0.3 // indirect
 	golang.org/x/net v0.38.0 // indirect
