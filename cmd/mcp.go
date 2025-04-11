@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -153,6 +154,7 @@ func createMCPClients(
 		for k, v := range server.Env {
 			env = append(env, fmt.Sprintf("%s=%s", k, v))
 		}
+
 		client, err := mcpclient.NewStdioMCPClient(
 			server.Command,
 			env,
@@ -167,6 +169,22 @@ func createMCPClients(
 				err,
 			)
 		}
+
+		stderr := client.Stderr()
+		reader := bufio.NewReader(stderr)
+		go func() {
+			for {
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					continue
+				}
+
+				line = strings.Trim(line, " \n\r")
+				if line != "" {
+					fmt.Printf("###Server %s send log: %s \n", name, line)
+				}
+			}
+		}()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
