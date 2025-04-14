@@ -177,11 +177,11 @@ func createMCPClients(
 				line, err := reader.ReadString('\n')
 				if err != nil {
 					continue
-				}
 
-				line = strings.Trim(line, " \n\r")
+				}
+				line = strings.TrimSpace(line)
 				if line != "" {
-					fmt.Printf("###Server %s send log: %s \n", name, line)
+					log.Debugf("######Server: %v send log: %v", name, line)
 				}
 			}
 		}()
