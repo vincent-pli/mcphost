@@ -181,7 +181,7 @@ func createMCPClients(
 				}
 				line = strings.TrimSpace(line)
 				if line != "" {
-					log.Debugf("######Server: %v send log: %v", name, line)
+					log.Debugf("📩 from server %v: %v", name, line)
 				}
 			}
 		}()
