@@ -1,4 +1,4 @@
-module github.com/vincentpli/mcphost
+module github.com/vincent-pli/mcphost
 
 go 1.23.0
 
