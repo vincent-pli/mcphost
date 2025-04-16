@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/vincentpli/mcphost/pkg/llm"
+	"github.com/vincent-pli/mcphost/pkg/llm"
 )
 
 // HistoryMessage implements the llm.Message interface for stored messages

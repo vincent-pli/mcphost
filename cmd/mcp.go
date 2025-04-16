@@ -18,8 +18,8 @@ import (
 
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/vincentpli/mcphost/pkg/history"
-	"github.com/vincentpli/mcphost/pkg/llm"
+	"github.com/vincent-pli/mcphost/pkg/history"
+	"github.com/vincent-pli/mcphost/pkg/llm"
 )
 
 var (

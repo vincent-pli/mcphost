@@ -17,12 +17,12 @@ import (
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/spf13/cobra"
-	"github.com/vincentpli/mcphost/pkg/history"
-	"github.com/vincentpli/mcphost/pkg/llm"
-	"github.com/vincentpli/mcphost/pkg/llm/anthropic"
-	"github.com/vincentpli/mcphost/pkg/llm/azure"
-	"github.com/vincentpli/mcphost/pkg/llm/ollama"
-	"github.com/vincentpli/mcphost/pkg/llm/openai"
+	"github.com/vincent-pli/mcphost/pkg/history"
+	"github.com/vincent-pli/mcphost/pkg/llm"
+	"github.com/vincent-pli/mcphost/pkg/llm/anthropic"
+	"github.com/vincent-pli/mcphost/pkg/llm/azure"
+	"github.com/vincent-pli/mcphost/pkg/llm/ollama"
+	"github.com/vincent-pli/mcphost/pkg/llm/openai"
 	"golang.org/x/term"
 )
 

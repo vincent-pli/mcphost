@@ -8,8 +8,8 @@ import (
 
 	"github.com/charmbracelet/log"
 	api "github.com/ollama/ollama/api"
-	"github.com/vincentpli/mcphost/pkg/history"
-	"github.com/vincentpli/mcphost/pkg/llm"
+	"github.com/vincent-pli/mcphost/pkg/history"
+	"github.com/vincent-pli/mcphost/pkg/llm"
 )
 
 func boolPtr(b bool) *bool {

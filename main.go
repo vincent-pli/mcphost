@@ -1,6 +1,6 @@
 package main
 
-import "github.com/vincentpli/mcphost/cmd"
+import "github.com/vincent-pli/mcphost/cmd"
 
 var version = "dev"
 

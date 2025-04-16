@@ -6,7 +6,7 @@ import (
 	"time"
 
 	api "github.com/ollama/ollama/api"
-	"github.com/vincentpli/mcphost/pkg/llm"
+	"github.com/vincent-pli/mcphost/pkg/llm"
 )
 
 // OllamaMessage adapts Ollama's message format to our Message interface
