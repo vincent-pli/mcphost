@@ -304,6 +304,12 @@ func runPrompt(
 				log.Warnf("llm hit rate limit: %s", err)
 				return nil
 			}
+
+			// rate hit ,maximum context length is not a fatal error, let user try again
+			if strings.Contains(err.Error(), "maximum context length") {
+				log.Warnf("llm hit maximum context length: %s", err)
+				return nil
+			}
 			// If it's not an overloaded error, return the error immediately
 			log.Errorf("Invoke LLM hit error, mcphost will shutdown, fix the error and try again: %s", err)
 			return err
