@@ -278,7 +278,6 @@ func runPrompt(
 			)
 		}
 		_ = spinner.New().Title("Thinking...").Action(action).Run()
-
 		if err != nil {
 			// Check if it's an overloaded error
 			if strings.Contains(err.Error(), "overloaded_error") {
@@ -314,16 +313,16 @@ func runPrompt(
 	}
 
 	var messageContent []history.ContentBlock
-	// Handle the message response
-	if str, err := renderer.Render("\nAssistant: "); err == nil {
-		fmt.Print(str)
-	}
 
 	toolResults := []history.ContentBlock{}
 	messageContent = []history.ContentBlock{}
 
 	// Add text content
 	if message.GetContent() != "" {
+		// Handle the message response
+		if str, err := renderer.Render("\nAssistant: "); err == nil {
+			fmt.Print(str)
+		}
 		if err := updateRenderer(); err != nil {
 			return fmt.Errorf("error updating renderer: %v", err)
 		}

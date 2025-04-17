@@ -46,7 +46,8 @@ func (p *Provider) CreateMessage(
 	log.Debug("creating message",
 		"prompt", prompt,
 		"num_messages", len(messages),
-		"num_tools", len(tools))
+		"num_tools", len(tools),
+	)
 
 	openaiMessages := make([]MessageParam, 0, len(messages))
 
