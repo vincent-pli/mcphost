@@ -146,6 +146,7 @@ func loadMCPConfig() (*MCPConfig, error) {
 
 func createMCPClients(
 	config *MCPConfig,
+	debugMode bool,
 ) (map[string]*mcpclient.StdioMCPClient, error) {
 	clients := make(map[string]*mcpclient.StdioMCPClient)
 
@@ -169,22 +170,6 @@ func createMCPClients(
 				err,
 			)
 		}
-
-		stderr := client.Stderr()
-		reader := bufio.NewReader(stderr)
-		go func() {
-			for {
-				line, err := reader.ReadString('\n')
-				if err != nil {
-					continue
-
-				}
-				line = strings.TrimSpace(line)
-				if line != "" {
-					log.Debug("📩 from server", "name", name, "message", line)
-				}
-			}
-		}()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -210,6 +195,42 @@ func createMCPClients(
 				err,
 			)
 		}
+
+		client.OnNotification(func(notification mcp.JSONRPCNotification) {
+			// https://modelcontextprotocol.io/specification/2025-03-26/server/utilities/logging
+			message := notification.Notification.Params.AdditionalFields
+			log.Info("📩 from server",
+				"name", name,
+				"logger", message["logger"],
+				"level", message["level"],
+				"message", message["data"],
+			)
+		})
+
+		request := mcp.SetLevelRequest{}
+		if debugMode {
+			request.Params.Level = mcp.LoggingLevelDebug
+		} else {
+			request.Params.Level = mcp.LoggingLevelInfo
+		}
+		client.SetLevel(ctx, request)
+
+		stderr := client.Stderr()
+		reader := bufio.NewReader(stderr)
+		go func() {
+			for {
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					continue
+
+				}
+				line = strings.TrimSpace(line)
+				if line != "" {
+					log.Error("👻 from server", "name", name, "message", line)
+					log.Error("👻 please fix the server issue and restart mcphost")
+				}
+			}
+		}()
 
 		clients[name] = client
 	}

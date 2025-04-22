@@ -501,7 +501,7 @@ func runMCPHost() error {
 		return fmt.Errorf("error loading MCP config: %v", err)
 	}
 
-	mcpClients, err := createMCPClients(mcpConfig)
+	mcpClients, err := createMCPClients(mcpConfig, debugMode)
 	if err != nil {
 		return fmt.Errorf("error creating MCP clients: %v", err)
 	}
